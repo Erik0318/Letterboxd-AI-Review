@@ -1,202 +1,123 @@
 # Letterboxd AI Review
 
-A no-login web app to analyze your Letterboxd export ZIP locally, generate rich stats/visualizations, and produce AI roast/praise based on merged data.
+A no login web app that analyses your Letterboxd export ZIP locally, generates rich stats and charts, and produces an AI roast or praise based on the merged dataset.
 
 ## Live site
 
-- Production: **https://erikdev.cc**
+* Production: https://erikdev.cc
 
 ## What this project does
 
-Letterboxd exports contain multiple CSV files (`watched.csv`, `ratings.csv`, `diary.csv`, `reviews.csv`, etc.).
-This app merges them into one master film dataset and provides:
+Letterboxd exports include multiple CSV files such as watched.csv, ratings.csv, diary.csv, reviews.csv, and more. This app parses the ZIP in the browser, merges everything into a single master film table, then provides:
 
-- core watched/rated statistics
-- activity and distribution charts
-- shareable summary text + share card image
-- AI commentary (roast/praise)
-- debug panel to inspect merge quality and anomalies
-
----
+* Core watched and rated statistics
+* Activity and distribution charts
+* Shareable summary text and a share card image export
+* AI commentary in roast or praise modes
+* A debug panel to inspect merge quality and anomalies
 
 ## Features
 
 ### 1) Import options
 
-- Upload your own Letterboxd ZIP.
-- Click **Use sample_data.zip** to load the official sample from `/sample_data.zip` (`public/sample_data.zip`) using the exact same import pipeline.
+* Upload your own Letterboxd ZIP.
+* Click Use sample_data.zip to load the official sample from /sample_data.zip (public/sample_data.zip) using the exact same import pipeline.
 
 ### 2) CSV parsing and merge rules
 
-Top-level CSVs recognized (when present):
+Top level CSVs recognised when present:
 
-- `watched.csv`
-- `ratings.csv`
-- `reviews.csv`
-- `diary.csv`
-- `watchlist.csv`
-- `profile.csv`
-- `comments.csv`
+* watched.csv
+* ratings.csv
+* reviews.csv
+* diary.csv
+* watchlist.csv
+* profile.csv
+* comments.csv
 
-Current merge behavior:
+Current merge behaviour:
 
-- `watched.csv` sets the watched baseline (`watched=true`)
-- `ratings.csv` writes rating fields
-- `reviews.csv` writes review text fields
-- `diary.csv` provides watch timeline (`watched_at` preferred, fallback to logged date), rewatch, tags
-- `comments.csv` is **not** treated as reviews
+* watched.csv sets the watched baseline with watched=true
+* ratings.csv writes rating fields
+* reviews.csv writes review text fields
+* diary.csv provides the watch timeline. watched_at is preferred, with fallback to logged date. It also provides rewatch and tags
+* comments.csv is not treated as reviews
 
-### 3) Visualizations and stats
+Films missing from watched but present in ratings, reviews, or diary are merged into the master table and surfaced in the debug summary.
+
+### 3) Visualisations and stats
 
 After import, the app shows:
 
-- watched/rated totals
-- mean/median rating
-- longest streak
-- monthly activity heatmap
-- rating histogram
-- release year/decade distributions
+* Watched and rated totals
+* Mean and median rating
+* Longest streak
+* Monthly activity heatmap
+* Rating histogram
+* Release year and decade distributions
+* Text frequency and a few style indices
 
 ### 4) AI output
 
-Supports roast/praise modes and intensity levels.
-Default backend path is DeepSeek (with optional OpenAI-compatible/Gemini settings in UI).
-AI input is generated from merged master data + computed stats.
+Supports roast and praise modes and intensity levels. Default backend is DeepSeek, with optional OpenAI compatible or Gemini settings in the UI.
+
+AI input is generated from:
+
+* Merged master film data
+* Computed stats and distributions
+* A compact profile payload that reflects merge diagnostics and anomalies
 
 ### 5) Debug summary
 
 A toggleable debug panel shows merge diagnostics such as:
 
-- detected CSV list
-- merged film totals
-- watched/date coverage
-- ratings/reviews hit rates
-- import spike metrics
-- sampled films with field/source presence
+* Detected CSV list
+* Merged film totals
+* watched=true count
+* Watched date coverage
+* Ratings and reviews hit rates
+* only in ratings and only in reviews counts
+* Import spike metrics, including the largest single day import count and date
+* Sampled films with field and source presence
 
----
+This exists to confirm you are looking at a real merged dataset, not single file stats.
 
 ## Tech stack
 
-- React + TypeScript + Vite
-- PapaParse + JSZip
-- html2canvas (share card export)
-- Cloudflare Pages Functions (`/api/ai`)
+* Frontend: React + TypeScript + Vite
+* CSV and ZIP: PapaParse + JSZip
+* Share card export: html2canvas
+* Serverless API: Cloudflare Pages Functions at /api/ai
 
----
-
-- 生产环境：**https://erikdev.cc**
-
-## 这个项目解决什么问题
-
-Letterboxd 导出的 ZIP 往往包含多份 CSV（如 `watched.csv`、`ratings.csv`、`diary.csv`、`reviews.csv` 等），直接阅读成本高、信息分散。本项目把这些表合并为统一的影片主表（master table），并提供：
-
-- 观影/评分核心统计
-- 评分分布与时间活跃度图表
-- 影迷风格面板（如重看倾向、探索倾向等）
-- 可复制摘要与分享卡片导出
-- 基于合并结果的 AI 个性化点评
-- 调试面板（Debug summary）用于验证 CSV 合并是否正确
-
----
-
-## 功能总览
-
-### 1) 导入方式
-
-- **上传 ZIP**：直接上传你自己的 Letterboxd 导出包。
-- **官方样本一键加载**：点击页面上的 `Use sample_data.zip`，自动读取 `/sample_data.zip`（即 `public/sample_data.zip`），走与上传完全一致的解析/合并管线。
-
-### 2) CSV 解析与合并（核心）
-
-当前会识别并读取以下顶层 CSV（如果存在）：
-
-- `watched.csv`
-- `ratings.csv`
-- `reviews.csv`
-- `diary.csv`
-- `watchlist.csv`
-- `profile.csv`
-- `comments.csv`
-
-合并规则（为可解释性固定）：
-
-- `watched.csv` 决定基准 `watched=true`
-- `ratings.csv` 写入评分字段
-- `reviews.csv` 写入短评字段（不会把 `comments.csv` 当 reviews）
-- `diary.csv` 提供时间线（优先 `watched_at`，缺失时退化到 `logged_at`）、重看与标签
-- 缺失于 watched 但存在于 ratings/reviews/diary 的影片会并入主表并在 debug 中可见
-
-### 3) 可视化与统计
-
-导入成功后会生成：
-
-- 总观影数、评分数、均分、中位数
-- 最长 streak（连续观影天数）
-- 月度热力图/活跃度
-- 评分直方图、发行年份分布
-- 文本词频与若干风格指数
-
-### 4) AI 点评
-
-支持 roast / praise 模式与不同强度，默认后端模型为 DeepSeek（可切换兼容 OpenAI 的提供方或 Gemini，按页面配置）。AI 输入来自合并后的统一数据与统计摘要。
-
-### 5) Debug Summary（验收与排错）
-
-页面内置 Debug 开关，展示：
-
-- 识别到的 CSV 列表
-- 合并后影片总数
-- watched=true 数量
-- watched 时间覆盖率
-- ratings/reviews 命中率
-- only-in-ratings / only-in-reviews 数量
-- import spike 指标（包括最大导入日计数）
-- 随机样本影片的来源与字段命中状态
-
-用于快速确认“是不是正确走了全量合并而不是单表统计”。
-
----
-
-## 技术栈
-
-- **Frontend**: React + TypeScript + Vite
-- **CSV/ZIP 处理**: PapaParse + JSZip
-- **截图导出**: html2canvas
-- **Serverless API**: Cloudflare Pages Functions (`/api/ai`)
-
----
-
-## 本地开发
+## Local development
 
 ```bash
 npm install
 npm run dev
 ```
 
-开发服务默认由 Vite 提供。
+Vite provides the dev server.
 
-## 生产构建
-Sample self-check:
+## Production build
+
+Sample self check:
 
 ```bash
 npm run verify:sample
 ```
 
-## Build
+Build and preview:
 
 ```bash
 npm run build
 npm run preview
 ```
 
----
-
 ## Sample verification
 
 Official sample data is included at:
 
-- `public/sample_data.zip`
+* public/sample_data.zip
 
 Run verification:
 
@@ -204,44 +125,191 @@ Run verification:
 npm run verify:sample
 ```
 
-This command loads sample ZIP, runs parser+merge, prints debug summary, and validates key constraints.
-
----
+This command loads the sample ZIP, runs parser and merge, prints the debug summary, and validates key constraints.
 
 ## Cloudflare Pages deployment
 
-- Build command: `npm run build`
-- Output directory: `dist`
+* Build command: npm run build
+* Output directory: dist
 
-Recommended production env (DeepSeek):
+Recommended production env for DeepSeek:
 
-- `OPENAI_API_KEY` (Secret)
-- `OPENAI_BASE_URL=https://api.deepseek.com` (without `/v1`)
-- `OPENAI_MODEL=deepseek-chat` (or `deepseek-reasoner`)
+* OPENAI_API_KEY as a secret
+* OPENAI_BASE_URL=https://api.deepseek.com  without /v1
+* OPENAI_MODEL=deepseek-chat  or deepseek-reasoner
 
-### 可选 Gemini 回退
+Optional Gemini fallback:
 
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
+* GEMINI_API_KEY
+* GEMINI_MODEL
 
-Rate-limit / bypass options:
+Rate limit and bypass options:
 
-- `AI_DAILY_LIMIT=2`
-- Bind KV namespace to `RLKV`
-- Optional `AI_BYPASS_IPS` (comma-separated)
-
----
+* AI_DAILY_LIMIT=2
+* Bind a KV namespace to RLKV
+* Optional AI_BYPASS_IPS as comma separated values
 
 ## Privacy
 
-- Parsing/stat calculations are done in-browser.
-- No login, no user database, refresh clears local state.
-- AI calls send generated profile/stat payload to `/api/ai` in your deployment.
+* Parsing and stat calculations run in the browser
+* No login, no user database, refresh clears local state
+* AI calls send a generated profile and stats payload to /api/ai on your own deployment
 
----
 
-## Українська
 
-Це вебзастосунок без логіну для локального аналізу ZIP-експорту Letterboxd.
-Він об’єднує CSV у єдину таблицю фільмів, будує статистику/графіки та генерує AI-огляд (roast/praise).
-Продакшн: **https://erikdev.cc**.
+# Letterboxd AI Review українською
+
+Вебзастосунок без логіну, який локально аналізує ZIP експорт Letterboxd, будує детальну статистику та графіки, а також генерує AI коментар у режимі roast або praise на основі об’єднаних даних.
+
+## Живий сайт
+
+* Продакшн: https://erikdev.cc
+
+## Що робить цей проєкт
+
+Експорт Letterboxd містить кілька CSV файлів, наприклад watched.csv, ratings.csv, diary.csv, reviews.csv та інші. Цей застосунок розбирає ZIP у браузері, об’єднує все в одну головну таблицю фільмів, і показує:
+
+* Базову статистику переглядів і оцінок
+* Графіки активності та розподілів
+* Текстовий підсумок для копіювання та експорт картки для поширення
+* AI коментар у режимах roast або praise
+* Debug панель для перевірки якості об’єднання та пошуку аномалій
+
+## Функції
+
+### 1) Імпорт
+
+* Завантаження власного ZIP експорту Letterboxd
+* Кнопка Use sample_data.zip, яка завантажує офіційний приклад з /sample_data.zip (public/sample_data.zip) через той самий пайплайн імпорту
+
+### 2) Розбір CSV та правила об’єднання
+
+CSV файли верхнього рівня, які розпізнаються, якщо присутні:
+
+* watched.csv
+* ratings.csv
+* reviews.csv
+* diary.csv
+* watchlist.csv
+* profile.csv
+* comments.csv
+
+Поточна логіка об’єднання:
+
+* watched.csv задає базову ознаку watched=true
+* ratings.csv записує поля оцінки
+* reviews.csv записує поля тексту рецензії
+* diary.csv формує часову лінію переглядів. Пріоритет має watched_at, якщо його немає, використовується logged date. Також додаються rewatch і теги
+* comments.csv не вважається reviews
+
+Фільми, яких немає у watched, але які є у ratings, reviews або diary, додаються до master таблиці та відображаються в debug summary.
+
+### 3) Візуалізації та статистика
+
+Після імпорту застосунок показує:
+
+* Загальну кількість переглянутих і оцінених
+* Середню та медіанну оцінку
+* Найдовший streak
+* Місячну теплову мапу активності
+* Гістограму оцінок
+* Розподіли за роком і десятиліттям релізу
+* Частоти тексту та кілька індексів стилю
+
+### 4) AI результат
+
+Підтримуються режими roast і praise та рівні інтенсивності. За замовчуванням бекенд це DeepSeek, також є налаштування сумісних OpenAI провайдерів або Gemini у UI.
+
+AI вхід генерується з:
+
+* Об’єднаних даних master таблиці фільмів
+* Обчисленої статистики та розподілів
+* Компактного профільного payload, який враховує діагностику об’єднання та аномалії
+
+### 5) Debug summary
+
+Перемикаюча debug панель показує діагностику об’єднання, наприклад:
+
+* Список знайдених CSV
+* Загальні підсумки по master таблиці
+* Кількість watched=true
+* Покриття дат перегляду
+* Відсоток збігів для ratings і reviews
+* Кількість only in ratings та only in reviews
+* Метрики import spike, включно з найбільшим імпортом за один день і датою
+* Випадкові приклади фільмів з позначенням, з яких джерел і полів вони зібрані
+
+Це потрібно, щоб швидко перевірити, що статистика базується на реальному об’єднанні, а не на одній таблиці.
+
+## Технології
+
+* Frontend: React + TypeScript + Vite
+* CSV та ZIP: PapaParse + JSZip
+* Експорт картки: html2canvas
+* Serverless API: Cloudflare Pages Functions за шляхом /api/ai
+
+## Локальна розробка
+
+```bash
+npm install
+npm run dev
+```
+
+Dev сервер надає Vite.
+
+## Продакшн збірка
+
+Самоперевірка на прикладі:
+
+```bash
+npm run verify:sample
+```
+
+Збірка та перегляд:
+
+```bash
+npm run build
+npm run preview
+```
+
+## Перевірка sample
+
+Офіційний sample включено тут:
+
+* public/sample_data.zip
+
+Запуск перевірки:
+
+```bash
+npm run verify:sample
+```
+
+Команда завантажує sample ZIP, запускає розбір і об’єднання, друкує debug summary та перевіряє ключові обмеження.
+
+## Деплой на Cloudflare Pages
+
+* Команда збірки: npm run build
+* Каталог виходу: dist
+
+Рекомендовані змінні середовища для DeepSeek:
+
+* OPENAI_API_KEY як secret
+* OPENAI_BASE_URL=https://api.deepseek.com  без /v1
+* OPENAI_MODEL=deepseek-chat  або deepseek-reasoner
+
+Опційний fallback на Gemini:
+
+* GEMINI_API_KEY
+* GEMINI_MODEL
+
+Опції ліміту та обходу:
+
+* AI_DAILY_LIMIT=2
+* Прив’язати KV namespace до RLKV
+* Опційно AI_BYPASS_IPS як список через кому
+
+## Приватність
+
+* Розбір і обчислення статистики виконуються в браузері
+* Немає логіну, немає бази користувачів, оновлення сторінки очищає локальний стан
+* AI запити надсилають згенерований payload профілю і статистики на /api/ai у вашому деплої
