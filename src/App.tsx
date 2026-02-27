@@ -73,6 +73,7 @@ export default function App() {
     };
 
     try {
+      const dossier = aiDossier(films, stats);
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -203,6 +204,7 @@ export default function App() {
               <p className="small">All timeline charts use watched_at first; fallback to logged_at only if watched_at is missing.</p>
               {stats.activity.usedLoggedFallback && <p className="small">⚠️ Some watched_at are missing; part of timeline uses logged_at estimates.</p>}
             </div>
+          </div>
 
             <div className="span6"><LineChart title="Watch count trend" points={trendPoints} yLabel="Watched films" valueKey="watched" /></div>
             <div className="span6"><LineChart title="Rating trend" points={trendPoints} yLabel="Average rating" valueKey="meanRating" /></div>
@@ -243,6 +245,7 @@ export default function App() {
                 <ShareCard stats={stats} label={label} labels={{ generated: "Generated", badge: "Badge", watched: "Watched", rated: "Rated", meanRating: "Mean", median: "Median", longestStreak: "Streak", commitment: "Commitment", topWords: "Top words", oneLine: "One line", na: "n/a", titleSuffix: "taste report" }} />
               </div>
             </div>
+            <p className="small" style={{ marginTop: 10 }}>{t("deepseekNote")}</p>
 
             <div className="card">
               <h2>3) AI roast / praise</h2>
