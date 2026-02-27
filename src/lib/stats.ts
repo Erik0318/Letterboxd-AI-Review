@@ -1,76 +1,67 @@
 import { FilmRecord } from "./letterboxd";
-import { clamp, dayKey, formatInt, formatPct, mean, median, monthKey, pearson, round1, stddev, toISODateOnly } from "./utils";
+import { clamp, formatInt, formatPct, mean, median, monthKey, pearson, round1, stddev } from "./utils";
+
+export type TrendPoint = { period: string; watched: number; meanRating: number | null; unratedShare: number };
+export type RadarMetric = { key: string; label: string; value: number };
 
 export type StatPack = {
   generatedAt: string;
-
   totals: {
     filmsWatched: number;
     filmsRated: number;
     filmsWithReviews: number;
-    diaryEntriesApprox: number;
+    diaryEntries: number;
     unratedWatched: number;
     ratedShare: number;
     rewatchFilms: number;
+    likes: number;
   };
-
   ratings: {
     mean: number | null;
     median: number | null;
     stddev: number | null;
     histogram: Array<{ rating: number; count: number }>;
+    mode: number | null;
+    indecisiveShare: number;
   };
-
   activity: {
     byMonth: Array<{ month: string; count: number }>;
-    byDay: Array<{ day: string; count: number }>;
     longestStreakDays: number;
-    busiestDay: { day: string; count: number } | null;
-    recent90: { watched: number; rated: number; meanRating: number | null };
+    topStreaks: Array<{ start: string; end: string; days: number }>;
+    busiestRealDay: { day: string; count: number } | null;
     ratingDateCorrelation: number | null;
+    usedLoggedFallback: boolean;
   };
-
+  trends: {
+    timeline: TrendPoint[];
+    recent12: TrendPoint[];
+    recent24: TrendPoint[];
+  };
   releaseYears: {
     top: Array<{ year: number; count: number }>;
     span: { min: number | null; max: number | null };
     decadeBuckets: Array<{ decade: string; count: number }>;
+    comfortZoneReturnRate: number;
+    explorationIndex: number;
   };
-
   text: {
     topWords: Array<{ word: string; count: number }>;
     avgReviewLength: number | null;
+    expressionIntensity: number;
+    persona: { type: string; reason: string };
   };
-
-  fun: {
-    tasteVolatilityIndex: number | null;
-    commitmentIndex: number; // rated / watched
-    chaosIndex: number | null; // rating stddev normalised
-    badge: string;
+  anomaly: {
+    importSpikeDetected: boolean;
+    largestSingleDayImportCount: number;
+    percentWithWatchedDates: number;
+    watchedDateSpanYears: number;
+    diaryEntrySpanYears: number;
   };
-
-  shareText: {
-    short: string;
-    long: string;
-  };
+  radar: RadarMetric[];
+  shareText: { short: string; long: string };
 };
 
-const STOPWORDS = new Set([
-  "the","a","an","and","or","but","if","then","so","to","of","in","on","at","for","with","as","is","are","was","were",
-  "i","you","he","she","they","we","me","my","your","his","her","their","our",
-  "this","that","these","those","it","its",
-  "film","movie","watch","watched","rating","stars",
-  "very","really","just","like","love","good","great","bad","dont","didnt","cant","wont","im","ive","ill"
-]);
-
-function tokenise(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[^a-z0-9\u00c0-\u02af\u0400-\u04ff\u4e00-\u9fff\s]/g, " ")
-    .split(/\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length >= 3 && s.length <= 24);
-}
+const STOPWORDS = new Set(["the", "and", "for", "that", "with", "this", "have", "you", "are", "was", "film", "movie", "just", "very", "really", "good", "great", "like", "dont", "didnt"]);
 
 function ratingBucketsHalfStars(): number[] {
   const out: number[] = [];
@@ -78,148 +69,175 @@ function ratingBucketsHalfStars(): number[] {
   return out;
 }
 
-function bestDate(rec: FilmRecord): string | null {
-  // Prefer watched date, else rated date.
-  const w = rec.watchedDates[rec.watchedDates.length - 1];
-  if (w) return w;
-  const r = rec.ratedDates[rec.ratedDates.length - 1];
-  if (r) return r;
-  return null;
+function ymdToEpochDay(iso: string): number {
+  return Math.floor(new Date(iso + "T00:00:00Z").getTime() / 86400000);
 }
 
-function dateToEpochDay(iso: string): number {
-  const d = new Date(iso + "T00:00:00Z");
-  return Math.floor(d.getTime() / 86400000);
+function bestTimelineDate(f: FilmRecord): { date: string | null; usedFallback: boolean } {
+  if (f.watchedAtDates.length) return { date: f.watchedAtDates[f.watchedAtDates.length - 1], usedFallback: false };
+  if (f.loggedAtDates.length) return { date: f.loggedAtDates[f.loggedAtDates.length - 1], usedFallback: true };
+  return { date: null, usedFallback: false };
 }
 
-function computeLongestStreak(days: string[]): number {
-  if (!days.length) return 0;
-  const ds = Array.from(new Set(days)).sort();
-  let best = 1;
-  let cur = 1;
-  for (let i = 1; i < ds.length; i++) {
-    const a = dateToEpochDay(ds[i - 1]);
-    const b = dateToEpochDay(ds[i]);
-    if (b === a + 1) cur += 1;
-    else cur = 1;
-    if (cur > best) best = cur;
+function computeStreaks(days: string[]) {
+  if (!days.length) return { longest: 0, top: [] as Array<{ start: string; end: string; days: number }> };
+  const unique = Array.from(new Set(days)).sort();
+  const streaks: Array<{ start: string; end: string; days: number }> = [];
+  let start = unique[0];
+  let prev = unique[0];
+  for (let i = 1; i < unique.length; i++) {
+    const cur = unique[i];
+    if (ymdToEpochDay(cur) === ymdToEpochDay(prev) + 1) {
+      prev = cur;
+      continue;
+    }
+    streaks.push({ start, end: prev, days: ymdToEpochDay(prev) - ymdToEpochDay(start) + 1 });
+    start = cur;
+    prev = cur;
   }
-  return best;
+  streaks.push({ start, end: prev, days: ymdToEpochDay(prev) - ymdToEpochDay(start) + 1 });
+  streaks.sort((a, b) => b.days - a.days);
+  return { longest: streaks[0]?.days || 0, top: streaks.slice(0, 3) };
+}
+
+function buildTimeline(points: Array<{ month: string; watched: number; ratingNums: number[]; unrated: number }>): TrendPoint[] {
+  return points.map((p) => ({
+    period: p.month,
+    watched: p.watched,
+    meanRating: mean(p.ratingNums),
+    unratedShare: p.watched ? p.unrated / p.watched : 0
+  }));
+}
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^a-z0-9\u4e00-\u9fff\u0400-\u04ff\s]/g, " ").split(/\s+/).map((s) => s.trim()).filter((s) => s.length >= 2);
+}
+
+function monthDiff(a: string, b: string): number {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return (by - ay) * 12 + (bm - am);
 }
 
 export function computeStats(films: FilmRecord[], userLabel: string | null): StatPack {
   const generatedAt = new Date().toISOString();
+  const watchedFilms = films.filter((f) => f.watched || f.watchedAtDates.length > 0 || f.loggedAtDates.length > 0);
+  const ratedFilms = films.filter((f) => f.rated && f.rating !== null);
+  const reviewFilms = films.filter((f) => f.reviewText.length > 0);
 
-  const watchedFilms = films.filter(f => f.watched);
-  const ratedFilms = films.filter(f => f.rated && f.rating !== null);
-  const reviewFilms = films.filter(f => f.reviewCount > 0);
-  const unratedWatched = watchedFilms.filter(f => !f.rated || f.rating === null).length;
+  const timelineRows = watchedFilms.map((f) => ({ f, ...bestTimelineDate(f) })).filter((x) => x.date) as Array<{ f: FilmRecord; date: string; usedFallback: boolean }>;
+  const usedLoggedFallback = timelineRows.some((x) => x.usedFallback);
 
-  const allWatchedDates = watchedFilms.flatMap(f => f.watchedDates);
-  const byDayMap = new Map<string, number>();
-  for (const d of allWatchedDates) byDayMap.set(dayKey(d), (byDayMap.get(dayKey(d)) || 0) + 1);
-  const byDay = Array.from(byDayMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([day, count]) => ({ day, count }));
+  const byDay = new Map<string, number>();
+  const byMonthTmp = new Map<string, { watched: number; ratingNums: number[]; unrated: number }>();
+  for (const row of timelineRows) {
+    byDay.set(row.date, (byDay.get(row.date) || 0) + 1);
+    const mk = monthKey(row.date);
+    const cur = byMonthTmp.get(mk) || { watched: 0, ratingNums: [], unrated: 0 };
+    cur.watched += 1;
+    if (row.f.rating !== null) cur.ratingNums.push(row.f.rating);
+    else cur.unrated += 1;
+    byMonthTmp.set(mk, cur);
+  }
 
-  const byMonthMap = new Map<string, number>();
-  for (const d of allWatchedDates) byMonthMap.set(monthKey(d), (byMonthMap.get(monthKey(d)) || 0) + 1);
-  const byMonth = Array.from(byMonthMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([month, count]) => ({ month, count }));
+  const monthRows = Array.from(byMonthTmp.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([month, val]) => ({ month, ...val }));
+  const timeline = buildTimeline(monthRows);
+  const latestMonth = timeline[timeline.length - 1]?.period;
+  const recent12 = latestMonth ? timeline.filter((t) => monthDiff(t.period, latestMonth) <= 11) : [];
+  const recent24 = latestMonth ? timeline.filter((t) => monthDiff(t.period, latestMonth) <= 23) : [];
 
-  const longestStreakDays = computeLongestStreak(byDay.map(d => d.day));
+  const watchedDays = timelineRows.map((x) => x.date);
+  const streakData = computeStreaks(watchedDays);
+  const busiestRealDay = Array.from(byDay.entries()).sort((a, b) => b[1] - a[1])[0];
 
-  const busiestDay = byDay.length
-    ? byDay.reduce((a, b) => (b.count > a.count ? b : a))
-    : null;
-
-  const ratingNums = ratedFilms.map(f => f.rating!).filter(n => Number.isFinite(n));
+  const ratingNums = ratedFilms.map((f) => f.rating!).filter((n) => Number.isFinite(n));
   const histBuckets = ratingBucketsHalfStars();
-  const histMap = new Map<number, number>(histBuckets.map(r => [r, 0]));
+  const histMap = new Map(histBuckets.map((r) => [r, 0]));
   for (const r of ratingNums) {
-    // snap to nearest 0.5
     const snapped = Math.round(r * 2) / 2;
-    if (histMap.has(snapped)) histMap.set(snapped, (histMap.get(snapped) || 0) + 1);
+    histMap.set(snapped, (histMap.get(snapped) || 0) + 1);
   }
-  const histogram = histBuckets.map(r => ({ rating: r, count: histMap.get(r) || 0 }));
+  const histogram = histBuckets.map((r) => ({ rating: r, count: histMap.get(r) || 0 }));
+  const modePair = histogram.reduce((a, b) => (b.count > a.count ? b : a), { rating: 0, count: -1 });
+  const indecisiveShare = ratedFilms.length ? ((histMap.get(2.5) || 0) + (histMap.get(3) || 0)) / ratedFilms.length : 0;
 
-  // recent 90 days
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - 90 * 86400000);
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
+  const dateRated = timelineRows.filter((r) => r.f.rating !== null).map((r) => ({ x: ymdToEpochDay(r.date), y: r.f.rating! }));
+  const ratingDateCorrelation = pearson(dateRated.map((p) => p.x), dateRated.map((p) => p.y));
 
-  const recentWatched = watchedFilms.filter(f => (bestDate(f) || "0000-00-00") >= cutoffIso);
-  const recentRated = ratedFilms.filter(f => (bestDate(f) || "0000-00-00") >= cutoffIso);
-  const recentMean = mean(recentRated.map(f => f.rating!).filter(n => Number.isFinite(n)));
-
-  // rating date correlation
-  const datedRated = ratedFilms
-    .map(f => {
-      const d = bestDate(f);
-      return d ? { x: dateToEpochDay(d), y: f.rating! } : null;
-    })
-    .filter(Boolean) as Array<{ x: number; y: number }>;
-  const corr = pearson(datedRated.map(p => p.x), datedRated.map(p => p.y));
-
-  // release years distribution
   const yearMap = new Map<number, number>();
-  for (const f of watchedFilms) {
-    if (f.year === null) continue;
-    yearMap.set(f.year, (yearMap.get(f.year) || 0) + 1);
-  }
-  const yearPairs = Array.from(yearMap.entries()).sort((a, b) => b[1] - a[1]);
-  const topYears = yearPairs.slice(0, 10).map(([year, count]) => ({ year, count }));
-  const years = yearPairs.map(([y]) => y);
+  for (const f of watchedFilms) if (f.year !== null) yearMap.set(f.year, (yearMap.get(f.year) || 0) + 1);
+  const topYears = Array.from(yearMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([year, count]) => ({ year, count }));
+  const years = Array.from(yearMap.keys());
   const span = years.length ? { min: Math.min(...years), max: Math.max(...years) } : { min: null, max: null };
 
   const decadeMap = new Map<string, number>();
   for (const f of watchedFilms) {
     if (f.year === null) continue;
-    const dec = Math.floor(f.year / 10) * 10;
-    const k = `${dec}s`;
-    decadeMap.set(k, (decadeMap.get(k) || 0) + 1);
+    const dec = `${Math.floor(f.year / 10) * 10}s`;
+    decadeMap.set(dec, (decadeMap.get(dec) || 0) + 1);
   }
-  const decadeBuckets = Array.from(decadeMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([decade, count]) => ({ decade, count }));
+  const decadeBuckets = Array.from(decadeMap.entries()).sort((a, b) => b[1] - a[1]).map(([decade, count]) => ({ decade, count }));
+  const top5DecadesCount = decadeBuckets.slice(0, 5).reduce((a, b) => a + b.count, 0);
+  const comfortZoneReturnRate = watchedFilms.length ? top5DecadesCount / watchedFilms.length : 0;
 
-  // text stats
-  const reviews = films.flatMap(f => f.reviewTextSamples);
+  const last12 = recent12;
+  const first12 = timeline.slice(0, Math.min(12, timeline.length));
+  const diversityRecent = new Set(watchedFilms.filter((f) => {
+    const d = bestTimelineDate(f).date;
+    return d && latestMonth && monthDiff(monthKey(d), latestMonth) <= 11;
+  }).map((f) => (f.year ? Math.floor(f.year / 10) : null)).filter(Boolean)).size;
+  const diversityAll = new Set(watchedFilms.map((f) => (f.year ? Math.floor(f.year / 10) : null)).filter(Boolean)).size;
+  const explorationIndex = clamp(diversityAll ? diversityRecent / diversityAll : 0, 0, 1);
+
+  const reviews = films.flatMap((f) => f.reviewText);
   const wordMap = new Map<string, number>();
   let totalLen = 0;
   for (const r of reviews) {
     totalLen += r.length;
-    for (const w of tokenise(r)) {
+    for (const w of tokenize(r)) {
       if (STOPWORDS.has(w)) continue;
       wordMap.set(w, (wordMap.get(w) || 0) + 1);
     }
   }
-  const topWords = Array.from(wordMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 25)
-    .map(([word, count]) => ({ word, count }));
+  const topWords = Array.from(wordMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 25).map(([word, count]) => ({ word, count }));
   const avgReviewLength = reviews.length ? totalLen / reviews.length : null;
+  const expressionIntensity = clamp((avgReviewLength || 0) / 350, 0, 1);
 
-  // fun indices
-  const commitmentIndex = watchedFilms.length ? ratedFilms.length / watchedFilms.length : 0;
-  const tasteVolatilityIndex = stddev(ratingNums);
-  const chaosIndex = tasteVolatilityIndex === null ? null : clamp(tasteVolatilityIndex / 1.2, 0, 2.0);
+  let persona = { type: "Minimalist", reason: "Short and sparse review text." };
+  if ((avgReviewLength || 0) > 420) persona = { type: "Essayist", reason: "Long review length and dense wording." };
+  else if (topWords.some((x) => ["cry", "love", "hate", "amazing", "terrible"].includes(x.word))) persona = { type: "Emotional", reason: "Frequent emotional vocabulary in reviews." };
+  else if (topWords.some((x) => ["editing", "frame", "narrative", "structure", "cinema"].includes(x.word))) persona = { type: "Analytical", reason: "Craft-focused wording appears repeatedly." };
 
-  let badge = "Mixed";
-  if (commitmentIndex > 0.85 && (tasteVolatilityIndex || 0) < 0.9) badge = "Curator";
-  else if (commitmentIndex > 0.85 && (tasteVolatilityIndex || 0) >= 0.9) badge = "Sharpshooter";
-  else if (commitmentIndex <= 0.6 && (tasteVolatilityIndex || 0) < 0.9) badge = "Wanderer";
-  else if (commitmentIndex <= 0.6 && (tasteVolatilityIndex || 0) >= 0.9) badge = "Chaos Gremlin";
+  const importByDay = new Map<string, number>();
+  for (const f of films) for (const d of f.importedAtDates) importByDay.set(d, (importByDay.get(d) || 0) + 1);
+  const largestSingleDayImportCount = Math.max(0, ...Array.from(importByDay.values()));
 
-  const label = userLabel?.trim() ? userLabel.trim() : "You";
-  const meanR = mean(ratingNums);
-  const medR = median(ratingNums);
+  const watchedDatesAll = watchedFilms.flatMap((f) => f.watchedAtDates);
+  const diaryDatesAll = watchedFilms.flatMap((f) => f.diaryEntries.map((e) => e.loggedAt || e.watchedAt).filter(Boolean)) as string[];
+  const watchedSpanYears = watchedDatesAll.length ? (new Date(watchedDatesAll[watchedDatesAll.length - 1]).getUTCFullYear() - new Date(watchedDatesAll[0]).getUTCFullYear() + 1) : 0;
+  const diarySpanYears = diaryDatesAll.length ? (new Date(diaryDatesAll.sort()[diaryDatesAll.length - 1]).getUTCFullYear() - new Date(diaryDatesAll.sort()[0]).getUTCFullYear() + 1) : 0;
+  const percentWithWatchedDates = watchedFilms.length ? watchedFilms.filter((f) => f.watchedAtDates.length > 0).length / watchedFilms.length : 0;
+  const importSpikeDetected = largestSingleDayImportCount >= 100 && watchedSpanYears >= 2;
 
-  const shareShort = `${label}: ${formatInt(watchedFilms.length)} watched, ${formatInt(ratedFilms.length)} rated, mean ${meanR ? round1(meanR) : "n/a"}`;
-  const shareLong =
-    `${label} watched ${formatInt(watchedFilms.length)} films and rated ${formatInt(ratedFilms.length)}. ` +
-    `Mean rating ${meanR ? round1(meanR) : "n/a"}, median ${medR ? round1(medR) : "n/a"}. ` +
-    `Longest streak ${formatInt(longestStreakDays)} days. ` +
-    `Commitment ${formatPct(commitmentIndex)}. Badge ${badge}.`;
+  const strictness = clamp(ratedFilms.length ? 1 - ((mean(ratingNums) || 0) / 5) : 0, 0, 1);
+  const diversity = clamp((decadeBuckets.length || 0) / 10, 0, 1);
+  const unratedInclination = watchedFilms.length ? (watchedFilms.length - ratedFilms.length) / watchedFilms.length : 0;
+  const rewatch = watchedFilms.length ? watchedFilms.filter((f) => f.diaryEntries.some((d) => d.rewatch)).length / watchedFilms.length : 0;
+  const concentration = 1 - comfortZoneReturnRate;
+
+  const radar: RadarMetric[] = [
+    { key: "strictness", label: "Rating strictness", value: Math.round(strictness * 100) },
+    { key: "diversity", label: "Diversity index", value: Math.round(diversity * 100) },
+    { key: "exploration", label: "Exploration", value: Math.round(explorationIndex * 100) },
+    { key: "rewatch", label: "Rewatch tendency", value: Math.round(rewatch * 100) },
+    { key: "unrated", label: "Unrated tendency", value: Math.round(unratedInclination * 100) },
+    { key: "expression", label: "Review intensity", value: Math.round(expressionIntensity * 100) },
+    { key: "concentration", label: "Concentration", value: Math.round(concentration * 100) }
+  ];
+
+  const label = userLabel?.trim() || "You";
+  const shareShort = `${label}: ${formatInt(watchedFilms.length)} watched, mean ${mean(ratingNums) ? round1(mean(ratingNums)!) : "n/a"}`;
+  const shareLong = `${label} watched ${formatInt(watchedFilms.length)} films (${formatPct(percentWithWatchedDates)} with real watched dates), rated ${formatInt(ratedFilms.length)}. Longest streak ${streakData.longest} days.`;
 
   return {
     generatedAt,
@@ -227,43 +245,45 @@ export function computeStats(films: FilmRecord[], userLabel: string | null): Sta
       filmsWatched: watchedFilms.length,
       filmsRated: ratedFilms.length,
       filmsWithReviews: reviewFilms.length,
-      diaryEntriesApprox: allWatchedDates.length,
-      unratedWatched,
-      ratedShare: commitmentIndex,
-      rewatchFilms: watchedFilms.filter(f => f.rewatchCount > 0).length
+      diaryEntries: watchedFilms.reduce((a, f) => a + f.diaryEntries.length, 0),
+      unratedWatched: watchedFilms.length - ratedFilms.length,
+      ratedShare: watchedFilms.length ? ratedFilms.length / watchedFilms.length : 0,
+      rewatchFilms: watchedFilms.filter((f) => f.diaryEntries.some((d) => d.rewatch)).length,
+      likes: films.filter((f) => f.like).length
     },
     ratings: {
-      mean: meanR,
-      median: medR,
+      mean: mean(ratingNums),
+      median: median(ratingNums),
       stddev: stddev(ratingNums),
-      histogram
+      histogram,
+      mode: modePair.count > 0 ? modePair.rating : null,
+      indecisiveShare
     },
     activity: {
-      byMonth,
-      byDay,
-      longestStreakDays,
-      busiestDay,
-      recent90: { watched: recentWatched.length, rated: recentRated.length, meanRating: recentMean },
-      ratingDateCorrelation: corr
+      byMonth: monthRows.map((m) => ({ month: m.month, count: m.watched })),
+      longestStreakDays: streakData.longest,
+      topStreaks: streakData.top,
+      busiestRealDay: busiestRealDay ? { day: busiestRealDay[0], count: busiestRealDay[1] } : null,
+      ratingDateCorrelation,
+      usedLoggedFallback
     },
+    trends: { timeline, recent12: last12, recent24 },
     releaseYears: {
       top: topYears,
       span,
-      decadeBuckets
+      decadeBuckets,
+      comfortZoneReturnRate,
+      explorationIndex
     },
-    text: {
-      topWords,
-      avgReviewLength
+    text: { topWords, avgReviewLength, expressionIntensity, persona },
+    anomaly: {
+      importSpikeDetected,
+      largestSingleDayImportCount,
+      percentWithWatchedDates,
+      watchedDateSpanYears: watchedSpanYears,
+      diaryEntrySpanYears: diarySpanYears
     },
-    fun: {
-      tasteVolatilityIndex,
-      commitmentIndex,
-      chaosIndex,
-      badge
-    },
-    shareText: {
-      short: shareShort,
-      long: shareLong
-    }
+    radar,
+    shareText: { short: shareShort, long: shareLong }
   };
 }
