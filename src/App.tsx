@@ -407,6 +407,11 @@ export default function App() {
               <div className="small">reviews hit rate: {formatPct(debugSummary.reviewsHitRate)}</div>
               <div className="small">only-in-ratings not-in-watched: {debugSummary.onlyInRatingsNotInWatched}</div>
               <div className="small">only-in-reviews not-in-watched: {debugSummary.onlyInReviewsNotInWatched}</div>
+              <div className="small">watched_true_with_dates_count: {debugSummary.watchedTrueWithDatesCount}</div>
+              <div className="small">watched_true_without_dates_count: {debugSummary.watchedTrueWithoutDatesCount}</div>
+              <div className="small">diary_rows_total: {debugSummary.diaryRowsTotal}</div>
+              <div className="small">diary_rows_matched_to_watched_count: {debugSummary.diaryRowsMatchedToWatchedCount}</div>
+              <div className="small">reviews_rows_matched_to_watched_count: {debugSummary.reviewsRowsMatchedToWatchedCount}</div>
               <div className="small">largestSingleDayImportCount: {debugSummary.largestSingleDayImportCount} ({debugSummary.largestSingleDayImportDate || "n/a"})</div>
               <div className="small">watchedDateSpanYears: {debugSummary.watchedDateSpanYears}</div>
               <div className="small">importSpikeDetected: {String(debugSummary.importSpikeDetected)}</div>
