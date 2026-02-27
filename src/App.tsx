@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 import html2canvas from "html2canvas";
 import Toast from "./components/Toast";
-import { readLetterboxdExportZip, mergeTablesToFilms, FilmRecord } from "./lib/letterboxd";
+import { readLetterboxdExportZip, mergeTablesToFilms, FilmRecord, MergeAnomaly, MergeDebugSummary } from "./lib/letterboxd";
 import { computeStats, StatPack } from "./lib/stats";
 import { BarList } from "./components/BarList";
 import { Heatmap } from "./components/Heatmap";
 import ShareCard from "./components/ShareCard";
-import { formatInt, formatPct, round1 } from "./lib/utils";
+import { formatInt, formatPct, round1, round3 } from "./lib/utils";
 
 type Provider = "default" | "openai_compat" | "gemini";
 
@@ -19,6 +19,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     reset: "Reset",
     importTitle: "1) Import",
     uploadHint: "Upload your Letterboxd export ZIP",
+    loadSample: "Use sample_data.zip",
+    debug: "Debug summary",
     localOnly: "All parsing and stats are local in your browser. Refresh clears everything.",
     label: "Label on share card",
     language: "Language",
@@ -74,6 +76,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     reset: "重置",
     importTitle: "1）导入",
     uploadHint: "上传 Letterboxd 导出 ZIP",
+    loadSample: "使用 sample_data.zip",
+    debug: "调试摘要",
     localOnly: "所有解析和统计都在浏览器本地完成。刷新即清空。",
     label: "分享卡片标签",
     language: "语言",
@@ -129,6 +133,8 @@ const I18N: Record<Lang, Record<string, string>> = {
     reset: "Скинути",
     importTitle: "1) Імпорт",
     uploadHint: "Завантажте ZIP-експорт Letterboxd",
+    loadSample: "Використати sample_data.zip",
+    debug: "Налагоджувальний зведений звіт",
     localOnly: "Усе обробляється локально в браузері. Оновлення сторінки очищує дані.",
     label: "Підпис на картці",
     language: "Мова",
@@ -182,7 +188,7 @@ const I18N: Record<Lang, Record<string, string>> = {
 
 function ratingLabel(r: number): string { return String(r); }
 
-function aiDossier(films: FilmRecord[], stats: StatPack) {
+function aiDossier(films: FilmRecord[], stats: StatPack, anomaly: MergeAnomaly | null) {
   const sorted = [...films].sort((a, b) => {
     const da = a.watchedDates[a.watchedDates.length - 1] || "0000-00-00";
     const db = b.watchedDates[b.watchedDates.length - 1] || "0000-00-00";
@@ -201,6 +207,7 @@ function aiDossier(films: FilmRecord[], stats: StatPack) {
     totals: stats.totals,
     rating: stats.ratings,
     activity: stats.activity,
+    anomaly,
     release: stats.releaseYears,
     topWords: stats.text.topWords,
     films: entries
@@ -212,6 +219,9 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [films, setFilms] = useState<FilmRecord[] | null>(null);
   const [stats, setStats] = useState<StatPack | null>(null);
+  const [mergeAnomaly, setMergeAnomaly] = useState<MergeAnomaly | null>(null);
+  const [debugSummary, setDebugSummary] = useState<MergeDebugSummary | null>(null);
+  const [showDebug, setShowDebug] = useState<boolean>(false);
   const [label, setLabel] = useState<string>("");
   const [language, setLanguage] = useState<Lang>("en");
   const [mode, setMode] = useState<"praise" | "roast">("roast");
@@ -231,19 +241,38 @@ export default function App() {
     window.setTimeout(() => setToast(null), 2200);
   }
 
-  async function onUploadZip(f: File) {
+  async function importZip(input: Blob | ArrayBuffer, sourceName: string) {
     setAiText("");
     setStats(null);
     setFilms(null);
-    setFileName(f.name);
+    setMergeAnomaly(null);
+    setDebugSummary(null);
+    setFileName(sourceName);
     try {
-      const tables = await readLetterboxdExportZip(f);
+      const tables = await readLetterboxdExportZip(input);
       const merged = mergeTablesToFilms(tables);
-      setFilms(merged);
-      setStats(computeStats(merged, label));
+      setFilms(merged.films);
+      setMergeAnomaly(merged.anomaly);
+      setDebugSummary(merged.debug);
+      setStats(computeStats(merged.films, label));
       showToast("Import complete.");
     } catch {
       showToast("Import failed. Check ZIP format.");
+    }
+  }
+
+  async function onUploadZip(f: File) {
+    await importZip(f, f.name);
+  }
+
+  async function onLoadSample() {
+    try {
+      const res = await fetch('/sample_data.zip', { cache: 'no-store' });
+      if (!res.ok) throw new Error('sample_data.zip not found');
+      const buf = await res.arrayBuffer();
+      await importZip(buf, 'sample_data.zip');
+    } catch {
+      showToast('Failed to load sample_data.zip');
     }
   }
 
@@ -265,7 +294,7 @@ export default function App() {
     setAiProgress(8);
     const id = window.setInterval(() => setAiProgress((p) => Math.min(p + 7, 92)), 700);
     try {
-      const dossier = aiDossier(films, stats);
+      const dossier = aiDossier(films, stats, mergeAnomaly);
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -335,6 +364,7 @@ export default function App() {
             <input type="file" accept=".zip" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUploadZip(f); }} />
             <div className="small">{fileName || t("uploadHint")}</div>
             <div className="small">{t("localOnly")}</div>
+            <button className="btn primary" style={{ marginTop: 10 }} onClick={onLoadSample}>{t("loadSample")}</button>
           </div>
 
           <div className="row" style={{ marginTop: 12 }}>
@@ -363,12 +393,40 @@ export default function App() {
             <span className="badge">{t("watchedDates")}: {formatInt(films.flatMap((f) => f.watchedDates).length)}</span>
             <span className="badge">{t("reviewSamples")}: {formatInt(films.flatMap((f) => f.reviewTextSamples).length)}</span>
           </div>}
+
+          {debugSummary && <div style={{ marginTop: 10 }}>
+            <label className="small" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" checked={showDebug} onChange={(e) => setShowDebug(e.target.checked)} /> {t("debug")}
+            </label>
+            {showDebug && <div className="card" style={{ marginTop: 8 }}>
+              <div className="small">csv: {debugSummary.csvDetected.join(", ") || "none"}</div>
+              <div className="small">films total: {debugSummary.filmTotal}</div>
+              <div className="small">watched=true: {debugSummary.watchedTrueCount}</div>
+              <div className="small">watched_at coverage: {formatPct(debugSummary.watchedAtCoverage)}</div>
+              <div className="small">ratings hit rate: {formatPct(debugSummary.ratingsHitRate)}</div>
+              <div className="small">reviews hit rate: {formatPct(debugSummary.reviewsHitRate)}</div>
+              <div className="small">only-in-ratings not-in-watched: {debugSummary.onlyInRatingsNotInWatched}</div>
+              <div className="small">only-in-reviews not-in-watched: {debugSummary.onlyInReviewsNotInWatched}</div>
+              <div className="small">watched_true_with_dates_count: {debugSummary.watchedTrueWithDatesCount}</div>
+              <div className="small">watched_true_without_dates_count: {debugSummary.watchedTrueWithoutDatesCount}</div>
+              <div className="small">diary_rows_total: {debugSummary.diaryRowsTotal}</div>
+              <div className="small">diary_rows_matched_to_watched_count: {debugSummary.diaryRowsMatchedToWatchedCount}</div>
+              <div className="small">reviews_rows_matched_to_watched_count: {debugSummary.reviewsRowsMatchedToWatchedCount}</div>
+              <div className="small">largestSingleDayImportCount: {debugSummary.largestSingleDayImportCount} ({debugSummary.largestSingleDayImportDate || "n/a"})</div>
+              <div className="small">watchedDateSpanYears: {debugSummary.watchedDateSpanYears}</div>
+              <div className="small">importSpikeDetected: {String(debugSummary.importSpikeDetected)}</div>
+              <div className="small" style={{ marginTop: 8 }}>sample films:</div>
+              {debugSummary.randomFilmSamples.map((x) => (
+                <div className="small" key={x.key}>• {x.name} [{x.sources.join("/")}] dates:{x.watchDatesCount} rating:{String(x.hasRating)} review:{String(x.hasReview)} tags:{String(x.hasTags)}</div>
+              ))}
+            </div>}
+          </div>}
         </div>
 
         {stats && <>
           <div className="card span3"><h2>{t("watched")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsWatched)}</div></div></div>
           <div className="card span3"><h2>{t("rated")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsRated)}</div></div></div>
-          <div className="card span3"><h2>{t("mean")}</h2><div className="kpi"><div className="value">{stats.ratings.mean === null ? "n/a" : round1(stats.ratings.mean)}</div></div></div>
+          <div className="card span3"><h2>{t("mean")}</h2><div className="kpi"><div className="value">{stats.ratings.mean === null ? "n/a" : round3(stats.ratings.mean)}</div></div></div>
           <div className="card span3"><h2>{t("streak")}</h2><div className="kpi"><div className="value">{formatInt(stats.activity.longestStreakDays)}</div></div></div>
 
           <div className="card span6">
