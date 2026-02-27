@@ -6,6 +6,10 @@ export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+export function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
 export function safeNum(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();

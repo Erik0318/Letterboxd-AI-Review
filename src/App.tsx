@@ -6,7 +6,7 @@ import { computeStats, StatPack } from "./lib/stats";
 import { BarList } from "./components/BarList";
 import { Heatmap } from "./components/Heatmap";
 import ShareCard from "./components/ShareCard";
-import { formatInt, formatPct, round1 } from "./lib/utils";
+import { formatInt, formatPct, round1, round3 } from "./lib/utils";
 
 type Provider = "default" | "openai_compat" | "gemini";
 
@@ -426,7 +426,7 @@ export default function App() {
         {stats && <>
           <div className="card span3"><h2>{t("watched")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsWatched)}</div></div></div>
           <div className="card span3"><h2>{t("rated")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsRated)}</div></div></div>
-          <div className="card span3"><h2>{t("mean")}</h2><div className="kpi"><div className="value">{stats.ratings.mean === null ? "n/a" : round1(stats.ratings.mean)}</div></div></div>
+          <div className="card span3"><h2>{t("mean")}</h2><div className="kpi"><div className="value">{stats.ratings.mean === null ? "n/a" : round3(stats.ratings.mean)}</div></div></div>
           <div className="card span3"><h2>{t("streak")}</h2><div className="kpi"><div className="value">{formatInt(stats.activity.longestStreakDays)}</div></div></div>
 
           <div className="card span6">

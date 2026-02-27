@@ -1,6 +1,6 @@
 import React from "react";
 import { StatPack } from "../lib/stats";
-import { formatInt, formatPct, round1 } from "../lib/utils";
+import { formatInt, formatPct, round1, round3 } from "../lib/utils";
 
 export type ShareCardLabels = {
   generated: string;
@@ -26,7 +26,7 @@ export default function ShareCard({
   label: string;
   labels: ShareCardLabels;
 }) {
-  const mean = stats.ratings.mean === null ? labels.na : round1(stats.ratings.mean);
+  const mean = stats.ratings.mean === null ? labels.na : round3(stats.ratings.mean);
   const med = stats.ratings.median === null ? labels.na : round1(stats.ratings.median);
 
   return (
