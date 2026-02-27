@@ -3,6 +3,11 @@
 一个**无需登录、纯前端解析**的 Letterboxd 数据分析与 AI 点评工具。你可以上传 Letterboxd 导出的 ZIP（或直接加载仓库内官方样本），在浏览器里完成数据合并、统计分析、可视化展示，并生成 AI 风格化评价（夸奖 / 锐评）。
 
 ## 在线地址
+Official sample input for regression/dev: `public/sample_data.zip` (also available at `/sample_data.zip` in production builds). Use the **Use sample_data.zip** button in the UI to run the same merge pipeline without manual upload.
+
+- No database, no persistence, refresh = clear.
+- Frontend static on Cloudflare Pages.
+- AI proxy via Pages Functions `/api/ai`.
 
 - 生产环境：**https://erikdev.cc**
 
@@ -96,6 +101,13 @@ npm run dev
 开发服务默认由 Vite 提供。
 
 ## 生产构建
+Sample self-check:
+
+```bash
+npm run verify:sample
+```
+
+## Build
 
 ```bash
 npm run build
