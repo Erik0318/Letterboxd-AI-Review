@@ -50,6 +50,7 @@ export function Heatmap({
                   style={cellStyle(c, active)}
                   title={`${key}: ${c}`}
                   onClick={() => onSelectMonth?.(key)}
+                  aria-label={`month-${key}`}
                 />
               );
             }

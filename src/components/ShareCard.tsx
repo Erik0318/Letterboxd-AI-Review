@@ -33,7 +33,7 @@ export default function ShareCard({
     <div className="shareCard" id="shareCard">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div>
-          <h3>{label || " "} {labels.titleSuffix}</h3>
+          <h3>{label ? `${label} ${labels.titleSuffix}` : labels.titleSuffix}</h3>
           <div className="small">{labels.generated} {new Date(stats.generatedAt).toLocaleString("en-GB")}</div>
         </div>
         <div className="badge">{labels.badge}: {stats.text.persona.type}</div>

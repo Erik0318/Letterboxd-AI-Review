@@ -120,8 +120,8 @@ export default function App() {
   const monthFilms = useMemo(() => {
     if (!films || !selectedMonth) return [] as FilmRecord[];
     return films.filter((f) => {
-      const d = f.watchedAtDates[f.watchedAtDates.length - 1] || f.loggedAtDates[f.loggedAtDates.length - 1];
-      return d?.startsWith(selectedMonth);
+      const timelineDates = [...f.watchedAtDates, ...f.loggedAtDates];
+      return timelineDates.some((d) => d.startsWith(selectedMonth));
     }).slice(0, 40);
   }, [films, selectedMonth]);
 

@@ -125,7 +125,11 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     let usedModel = "";
     let text = "";
 
-    if (provider === "gemini") {
+    const shouldUseGemini =
+      provider === "gemini" ||
+      (provider === "default" && !ctx.env.OPENAI_API_KEY && !!ctx.env.GEMINI_API_KEY);
+
+    if (shouldUseGemini) {
       const apiKey = body.apiKey || ctx.env.GEMINI_API_KEY;
       if (!apiKey) throw new Error("Missing Gemini API key.");
       const model = body.model || ctx.env.GEMINI_MODEL || "gemini-1.5-flash";
