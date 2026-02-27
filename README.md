@@ -1,3 +1,8 @@
+## Contents / Зміст
+
+* [English](#letterboxd-ai-review)
+* [Українська](#letterboxd-ai-review-українською)
+
 # Letterboxd AI Review
 
 A no login web app that analyses your Letterboxd export ZIP locally, generates rich stats and charts, and produces an AI roast or praise based on the merged dataset.
