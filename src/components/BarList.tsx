@@ -3,17 +3,19 @@ import { clamp, formatInt } from "../lib/utils";
 
 export function BarList({
   title,
-  items
+  items,
+  emptyText = "No data."
 }: {
   title: string;
   items: Array<{ label: string; value: number }>;
+  emptyText?: string;
 }) {
   const max = Math.max(1, ...items.map(i => i.value));
   return (
     <div className="card">
       <h2>{title}</h2>
       {items.length === 0 ? (
-        <p>No data.</p>
+        <p>{emptyText}</p>
       ) : (
         <div>
           {items.map((it) => {
