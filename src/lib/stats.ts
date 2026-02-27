@@ -1,5 +1,5 @@
 import { FilmRecord } from "./letterboxd";
-import { clamp, dayKey, formatInt, formatPct, mean, median, monthKey, pearson, round1, stddev, toISODateOnly } from "./utils";
+import { clamp, dayKey, formatInt, formatPct, mean, median, monthKey, pearson, round1, round3, stddev, toISODateOnly } from "./utils";
 
 export type StatPack = {
   generatedAt: string;
@@ -214,10 +214,10 @@ export function computeStats(films: FilmRecord[], userLabel: string | null): Sta
   const meanR = mean(ratingNums);
   const medR = median(ratingNums);
 
-  const shareShort = `${label}: ${formatInt(watchedFilms.length)} watched, ${formatInt(ratedFilms.length)} rated, mean ${meanR ? round1(meanR) : "n/a"}`;
+  const shareShort = `${label}: ${formatInt(watchedFilms.length)} watched, ${formatInt(ratedFilms.length)} rated, mean ${meanR ? round3(meanR) : "n/a"}`;
   const shareLong =
     `${label} watched ${formatInt(watchedFilms.length)} films and rated ${formatInt(ratedFilms.length)}. ` +
-    `Mean rating ${meanR ? round1(meanR) : "n/a"}, median ${medR ? round1(medR) : "n/a"}. ` +
+    `Mean rating ${meanR ? round3(meanR) : "n/a"}, median ${medR ? round1(medR) : "n/a"}. ` +
     `Longest streak ${formatInt(longestStreakDays)} days. ` +
     `Commitment ${formatPct(commitmentIndex)}. Badge ${badge}.`;
 
