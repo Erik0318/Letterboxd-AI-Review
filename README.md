@@ -2,6 +2,8 @@
 
 A public no-login web app: upload Letterboxd export ZIP, parse locally, get rich stats, and generate AI roast/praise.
 
+Official sample input for regression/dev: `public/sample_data.zip` (also available at `/sample_data.zip` in production builds). Use the **Use sample_data.zip** button in the UI to run the same merge pipeline without manual upload.
+
 - No database, no persistence, refresh = clear.
 - Frontend static on Cloudflare Pages.
 - AI proxy via Pages Functions `/api/ai`.
@@ -11,6 +13,12 @@ A public no-login web app: upload Letterboxd export ZIP, parse locally, get rich
 ```bash
 npm install
 npm run dev
+```
+
+Sample self-check:
+
+```bash
+npm run verify:sample
 ```
 
 ## Build
