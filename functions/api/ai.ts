@@ -55,19 +55,19 @@ async function enforceRateLimit(env: Env, ip: string): Promise<{ ok: boolean; re
 }
 
 function buildPrompt(body: Body): { system: string; user: string } {
-  const language = (body.language || "en").trim();
+  const language = (body.language || "zh").trim();
   const mode = body.mode || "roast";
   const level = body.roastLevel || 2;
-  const strictness = level === 1 ? "mild and playful" : level === 2 ? "sharp and witty" : "aggressive but still respectful";
+  const strictness = level === 1 ? "mild" : level === 2 ? "direct" : "sharp";
 
   const system =
-    `You are writing a direct film-friend style monologue to the user. ` +
-    `Output ONLY in ${language}. Mode=${mode}. Tone=${strictness}. ` +
-    `Hard rules: no markdown headings, no numbered template, no system-style wording, no fluff. ` +
-    `Use concrete references to the uploaded film list patterns (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
-    `Structure: (A) 1 short title line, (B) 3 compact paragraphs speaking directly to the user, (C) 8 bullet recommendations with specific movie names and one-line reason.`;
+    `你是用户的电影朋友，只能输出${language}。Mode=${mode} Tone=${strictness}。` +
+    `禁止输出任何 markdown 排版符号或格式词，比如 **、##、列表模板。` +
+    `必须基于提供的 master summary 与 anomaly section。` +
+    `如果 import_spike_detected=true，严禁把导入日高峰当成真实观影高峰；只能使用 watched_at 或 logged_at fallback 的时间分布。` +
+    `内容结构：1行标题 + 3段短评 + 6条具体建议。`;
 
-  const user = `Full Letterboxd dossier JSON:\n${JSON.stringify(body.profile || {}, null, 2)}`;
+  const user = `Merged Letterboxd dossier JSON (canonical master table summary):\n${JSON.stringify(body.profile || {}, null, 2)}`;
   return { system, user };
 }
 
