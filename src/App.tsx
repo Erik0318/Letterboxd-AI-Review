@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import html2canvas from "html2canvas";
 import Toast from "./components/Toast";
-import { readLetterboxdExportZip, mergeTablesToFilms, FilmRecord } from "./lib/letterboxd";
+import { readLetterboxdExportZipBuffer, mergeTablesToFilms, FilmRecord, MergeAnomaly, MergeDebugSummary } from "./lib/letterboxd";
 import { computeStats, StatPack } from "./lib/stats";
 import { BarList } from "./components/BarList";
 import { Heatmap } from "./components/Heatmap";
@@ -182,7 +182,7 @@ const I18N: Record<Lang, Record<string, string>> = {
 
 function ratingLabel(r: number): string { return String(r); }
 
-function aiDossier(films: FilmRecord[], stats: StatPack) {
+function aiDossier(films: FilmRecord[], stats: StatPack, anomaly: MergeAnomaly | null) {
   const sorted = [...films].sort((a, b) => {
     const da = a.watchedDates[a.watchedDates.length - 1] || "0000-00-00";
     const db = b.watchedDates[b.watchedDates.length - 1] || "0000-00-00";
@@ -203,6 +203,7 @@ function aiDossier(films: FilmRecord[], stats: StatPack) {
     activity: stats.activity,
     release: stats.releaseYears,
     topWords: stats.text.topWords,
+    anomaly,
     films: entries
   };
 }
@@ -212,6 +213,9 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [films, setFilms] = useState<FilmRecord[] | null>(null);
   const [stats, setStats] = useState<StatPack | null>(null);
+  const [mergeAnomaly, setMergeAnomaly] = useState<MergeAnomaly | null>(null);
+  const [debugSummary, setDebugSummary] = useState<MergeDebugSummary | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
   const [label, setLabel] = useState<string>("");
   const [language, setLanguage] = useState<Lang>("en");
   const [mode, setMode] = useState<"praise" | "roast">("roast");
@@ -231,19 +235,37 @@ export default function App() {
     window.setTimeout(() => setToast(null), 2200);
   }
 
-  async function onUploadZip(f: File) {
+  async function loadFromZipBuffer(name: string, zipBuffer: ArrayBuffer) {
     setAiText("");
     setStats(null);
     setFilms(null);
-    setFileName(f.name);
+    setMergeAnomaly(null);
+    setDebugSummary(null);
+    setFileName(name);
     try {
-      const tables = await readLetterboxdExportZip(f);
+      const tables = await readLetterboxdExportZipBuffer(zipBuffer);
       const merged = mergeTablesToFilms(tables);
-      setFilms(merged);
-      setStats(computeStats(merged, label));
+      setFilms(merged.films);
+      setStats(computeStats(merged.films, label));
+      setMergeAnomaly(merged.anomaly);
+      setDebugSummary(merged.debug);
       showToast("Import complete.");
     } catch {
       showToast("Import failed. Check ZIP format.");
+    }
+  }
+
+  async function onUploadZip(f: File) {
+    await loadFromZipBuffer(f.name, await f.arrayBuffer());
+  }
+
+  async function onLoadSample() {
+    try {
+      const res = await fetch('/sample_data.zip');
+      if (!res.ok) throw new Error('sample_data.zip not found');
+      await loadFromZipBuffer('sample_data.zip', await res.arrayBuffer());
+    } catch {
+      showToast('Failed to load /sample_data.zip');
     }
   }
 
@@ -265,7 +287,7 @@ export default function App() {
     setAiProgress(8);
     const id = window.setInterval(() => setAiProgress((p) => Math.min(p + 7, 92)), 700);
     try {
-      const dossier = aiDossier(films, stats);
+      const dossier = aiDossier(films, stats, mergeAnomaly);
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -335,6 +357,7 @@ export default function App() {
             <input type="file" accept=".zip" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUploadZip(f); }} />
             <div className="small">{fileName || t("uploadHint")}</div>
             <div className="small">{t("localOnly")}</div>
+            <button className="btn" style={{ marginTop: 10 }} onClick={onLoadSample}>Use sample_data.zip</button>
           </div>
 
           <div className="row" style={{ marginTop: 12 }}>
@@ -363,6 +386,26 @@ export default function App() {
             <span className="badge">{t("watchedDates")}: {formatInt(films.flatMap((f) => f.watchedDates).length)}</span>
             <span className="badge">{t("reviewSamples")}: {formatInt(films.flatMap((f) => f.reviewTextSamples).length)}</span>
           </div>}
+          {debugSummary && <div style={{ marginTop: 12 }}>
+            <button className="btn" onClick={() => setShowDebug((v) => !v)}>{showDebug ? "Hide" : "Show"} Debug summary</button>
+            {showDebug && <div className="card" style={{ marginTop: 10 }}>
+              <h2>Debug summary</h2>
+              <div className="small">CSV files: {debugSummary.recognizedCsvFiles.join(", ") || "none"}</div>
+              <div className="small">filmsTotal: {debugSummary.filmsTotal}</div>
+              <div className="small">watched=true: {debugSummary.watchedTrueCount}</div>
+              <div className="small">with watched_at/logged_at: {formatPct(debugSummary.percentWithWatchedAt)}</div>
+              <div className="small">ratings hit rate: {formatPct(debugSummary.ratingsHitRate)}</div>
+              <div className="small">reviews hit rate: {formatPct(debugSummary.reviewsHitRate)}</div>
+              <div className="small">only-in-ratings not-in-watched: {debugSummary.onlyInRatingsNotInWatched}</div>
+              <div className="small">only-in-reviews not-in-watched: {debugSummary.onlyInReviewsNotInWatched}</div>
+              <div className="small">largestSingleDayImportCount/date: {debugSummary.largestSingleDayImportCount} / {debugSummary.largestSingleDayImportDate || "n/a"}</div>
+              <div className="small">watchedDateSpanYears: {debugSummary.watchedDateSpanYears}</div>
+              <div className="small">importSpikeDetected: {String(debugSummary.importSpikeDetected)}</div>
+              <div className="hr" />
+              {debugSummary.sampleFilms.map((f) => <div className="small" key={f.key}>{f.name} | sources={f.sources.join("|")} | watch_dates={f.watchDatesCount} | rating={String(f.hasRating)} | review={String(f.hasReview)} | tags={String(f.hasTags)}</div>)}
+            </div>}
+          </div>}
+
         </div>
 
         {stats && <>
@@ -421,6 +464,7 @@ export default function App() {
               <button className="btn primary" onClick={runAI} disabled={aiBusy}>{aiBusy ? t("running") : t("generate")}</button>
             </div>
             <p className="small" style={{ marginTop: 10 }}>{t("deepseekNote")}</p>
+            {mergeAnomaly?.importSpikeDetected && <p className="small">Import spike detected; rhythm stats and AI use diary watched_at/logged_at only.</p>}
 
             {aiBusy && <div className="kpi" style={{ marginTop: 10 }}>
               <div className="label">{t("aiProgress")}</div>

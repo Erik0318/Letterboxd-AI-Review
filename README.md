@@ -20,6 +20,20 @@ npm run build
 npm run preview
 ```
 
+## Official sample input (for debug / QA)
+
+- Put the sample ZIP at `public/sample_data.zip` so it is reachable as `/sample_data.zip` in both dev and production builds.
+- In the UI, click **Use sample_data.zip** to run the exact same parse + merge pipeline as manual upload.
+- Debug summary panel shows merge coverage/anomaly diagnostics (CSV list, hit rates, only-in-ratings/reviews counts, import spike, sampled films).
+
+### Sample self-check
+
+```bash
+npm run verify:sample
+```
+
+This script loads `public/sample_data.zip` (or falls back to repo-root `sample_data.zip`), prints debug summary, and checks critical assertions.
+
 ## Cloudflare Pages setup
 
 - Build command: `npm run build`

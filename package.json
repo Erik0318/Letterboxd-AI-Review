@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:sample": "node scripts/verify-sample.mjs"
   },
   "dependencies": {
     "html2canvas": "^1.4.1",

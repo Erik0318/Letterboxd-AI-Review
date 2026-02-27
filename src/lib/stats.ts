@@ -79,11 +79,8 @@ function ratingBucketsHalfStars(): number[] {
 }
 
 function bestDate(rec: FilmRecord): string | null {
-  // Prefer watched date, else rated date.
   const w = rec.watchedDates[rec.watchedDates.length - 1];
   if (w) return w;
-  const r = rec.ratedDates[rec.ratedDates.length - 1];
-  if (r) return r;
   return null;
 }
 
@@ -115,7 +112,8 @@ export function computeStats(films: FilmRecord[], userLabel: string | null): Sta
   const reviewFilms = films.filter(f => f.reviewCount > 0);
   const unratedWatched = watchedFilms.filter(f => !f.rated || f.rating === null).length;
 
-  const allWatchedDates = watchedFilms.flatMap(f => f.watchedDates);
+  // timeline must come from diary watched_at/logged_at-derived dates, never import dates
+  const allWatchedDates = films.flatMap(f => f.watchedDates);
   const byDayMap = new Map<string, number>();
   for (const d of allWatchedDates) byDayMap.set(dayKey(d), (byDayMap.get(dayKey(d)) || 0) + 1);
   const byDay = Array.from(byDayMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
