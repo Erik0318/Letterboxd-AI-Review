@@ -1,23 +1,17 @@
-# Letterboxd Taste Report (ZIP import)
+# Letterboxd AI Review (ZIP import)
 
-A single page web app that runs locally in the browser.
+A public no-login web app: upload Letterboxd export ZIP, parse locally, get rich stats, and generate AI roast/praise.
 
-- Input: a Letterboxd data export ZIP (contains CSV files)
-- Output: stats dashboards + share card + AI praise or roast
-- No login, no database, no user data stored server side
-- Optional AI proxy via Cloudflare Pages Functions (/api/ai)
+- No database, no persistence, refresh = clear.
+- Frontend static on Cloudflare Pages.
+- AI proxy via Pages Functions `/api/ai`.
 
 ## Local development
-
-1. Install Node.js 18+.
-2. In this folder:
 
 ```bash
 npm install
 npm run dev
 ```
-
-Open the local URL Vite prints.
 
 ## Build
 
@@ -26,39 +20,30 @@ npm run build
 npm run preview
 ```
 
-## Deploy on Cloudflare Pages
+## Cloudflare Pages setup
 
-1. Create a Cloudflare Pages project from this repo.
-2. Build command: `npm run build`
-3. Build output directory: `dist`
+- Build command: `npm run build`
+- Output directory: `dist`
 
-Pages Functions in `functions/` will deploy automatically.
-Set environment variables in Cloudflare Pages project settings.
+### Recommended defaults (DeepSeek)
 
-### AI defaults (optional)
+Set in **Production Variables/Secrets**:
 
-If you want a default AI without users entering keys, set at least one provider.
+- `OPENAI_API_KEY` = your DeepSeek API key (Secret)
+- `OPENAI_BASE_URL` = `https://api.deepseek.com` (**do not** end with `/v1`)
+- `OPENAI_MODEL` = `deepseek-chat` (or `deepseek-reasoner`)
 
-OpenAI compatible (OpenAI, DeepSeek, Doubao, or any compatible gateway)
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` default `https://api.openai.com`
-- `OPENAI_MODEL` default `gpt-4o-mini`
+Optional Gemini fallback:
 
-Gemini
 - `GEMINI_API_KEY`
-- `GEMINI_MODEL` default `gemini-1.5-flash`
+- `GEMINI_MODEL`
 
-Default provider selection logic:
-- If `GEMINI_API_KEY` exists, default to Gemini
-- Else if `OPENAI_API_KEY` exists, default to OpenAI compatible
-- Else AI calls require the user to enter an API key
+### Daily limit + whitelist
 
-### Rate limit (recommended)
+- `AI_DAILY_LIMIT=2`
+- Bind KV namespace to `RLKV`
+- Optional whitelist env: `AI_BYPASS_IPS` (comma-separated IPs)
 
-Create a Cloudflare KV namespace and bind it to the Pages project as `RLKV`.
-The function enforces 2 AI calls per IP per day.
+This project also hard-bypasses `5.34.216.81` for unlimited testing.
 
-## Notes
-
-This project intentionally treats ratings as optional.
-Watched items without ratings are first class and appear in stats.
+After changing Variables/Bindings on Cloudflare Pages, redeploy the latest Production deployment.
