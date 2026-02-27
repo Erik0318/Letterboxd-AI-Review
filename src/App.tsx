@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import html2canvas from "html2canvas";
 import Toast from "./components/Toast";
-import { readLetterboxdExportZip, mergeTablesToFilms, FilmRecord } from "./lib/letterboxd";
+import { readLetterboxdExportZip, mergeTablesToMaster, FilmRecord, MergeDebugSummary } from "./lib/letterboxd";
 import { computeStats, StatPack } from "./lib/stats";
 import { BarList } from "./components/BarList";
 import { Heatmap } from "./components/Heatmap";
@@ -212,6 +212,7 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [films, setFilms] = useState<FilmRecord[] | null>(null);
   const [stats, setStats] = useState<StatPack | null>(null);
+  const [mergeDebug, setMergeDebug] = useState<MergeDebugSummary | null>(null);
   const [label, setLabel] = useState<string>("");
   const [language, setLanguage] = useState<Lang>("en");
   const [mode, setMode] = useState<"praise" | "roast">("roast");
@@ -236,11 +237,13 @@ export default function App() {
     setStats(null);
     setFilms(null);
     setFileName(f.name);
+    setMergeDebug(null);
     try {
       const tables = await readLetterboxdExportZip(f);
-      const merged = mergeTablesToFilms(tables);
-      setFilms(merged);
-      setStats(computeStats(merged, label));
+      const merged = mergeTablesToMaster(tables);
+      setFilms(merged.films);
+      setMergeDebug(merged.debug);
+      setStats(computeStats(merged.films, label));
       showToast("Import complete.");
     } catch {
       showToast("Import failed. Check ZIP format.");
@@ -363,6 +366,16 @@ export default function App() {
             <span className="badge">{t("watchedDates")}: {formatInt(films.flatMap((f) => f.watchedDates).length)}</span>
             <span className="badge">{t("reviewSamples")}: {formatInt(films.flatMap((f) => f.reviewTextSamples).length)}</span>
           </div>}
+          {mergeDebug && <div className="card" style={{ marginTop: 10 }}>
+            <h2>Debug summary</h2>
+            <div className="small">CSV detected: {mergeDebug.csvDetected.join(", ") || "none"}</div>
+            <div className="small">Merged films: {formatInt(mergeDebug.mergedFilmCount)}</div>
+            <div className="small">With watched_at: {formatPct(mergeDebug.percentWithWatchedAt)}</div>
+            <div className="small">ratings merge hit: {formatPct(mergeDebug.ratingsMergeHitRate)}</div>
+            <div className="small">reviews merge hit: {formatPct(mergeDebug.reviewsMergeHitRate)}</div>
+            <div className="small">only in ratings/reviews: {formatInt(mergeDebug.onlyInRatingsOrReviews)}</div>
+          </div>}
+
         </div>
 
         {stats && <>
