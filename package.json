@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:sample": "rm -rf .verify && tsc src/lib/letterboxd.ts src/lib/utils.ts --module ES2022 --moduleResolution Bundler --target ES2022 --outDir .verify --esModuleInterop --skipLibCheck && python -c \"from pathlib import Path;p=Path('.verify/letterboxd.js');p.write_text(p.read_text().replace('\\\"./utils\\\"','\\\"./utils.js\\\"'))\" && node scripts/verify-sample.mjs"
   },
   "dependencies": {
     "html2canvas": "^1.4.1",
