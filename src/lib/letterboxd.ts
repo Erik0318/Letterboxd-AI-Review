@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import { safeNum, toISODateOnly } from "./utils";
 
 export type RawRow = Record<string, string>;
+export type FilmKey = string;
 
 export type ExportTables = {
   files: string[];
@@ -10,35 +11,44 @@ export type ExportTables = {
   ratings?: RawRow[];
   diary?: RawRow[];
   reviews?: RawRow[];
-  likes?: RawRow[];
+  comments?: RawRow[];
+  profile?: RawRow[];
   unknown: Record<string, RawRow[]>;
 };
 
-export type FilmKey = string;
+export type DiaryEntry = {
+  watched_at: string | null;
+  logged_at: string | null;
+  tags: string[];
+  rewatch: boolean;
+};
 
 export type FilmRecord = {
-  key: FilmKey;
+  film_id: FilmKey;
   name: string;
   year: number | null;
   letterboxdUri: string | null;
-
   watched: boolean;
-  watchedDates: string[];
-
-  rated: boolean;
   rating: number | null;
-  ratedDates: string[];
-
-  rewatchCount: number;
-  reviewCount: number;
-  reviewTextSamples: string[];
-
-  liked: boolean;
+  review_text: string[];
+  diary_entries: DiaryEntry[];
+  watch_dates: string[];
+  watched_at: string | null;
+  logged_at: string | null;
+  imported_at: string | null;
+  hasEstimatedDate: boolean;
 };
 
-function normaliseHeader(h: string): string {
-  return h.trim().toLowerCase();
-}
+export type MergeDebug = {
+  csvDetected: string[];
+  mergedFilmCount: number;
+  percentWithWatchedAt: number;
+  ratingsMergeHitRate: number;
+  reviewsMergeHitRate: number;
+  onlyInRatingsOrReviews: number;
+};
+
+function normaliseHeader(h: string): string { return h.trim().toLowerCase(); }
 
 function getField(row: RawRow, names: string[]): string | null {
   const map: Record<string, string> = {};
@@ -52,138 +62,142 @@ function getField(row: RawRow, names: string[]): string | null {
 
 function parseCSV(text: string): RawRow[] {
   const res = Papa.parse<RawRow>(text, { header: true, skipEmptyLines: true });
-  const rows = (res.data || []).filter(r => Object.keys(r).length > 0);
-  return rows;
+  return (res.data || []).filter((r) => Object.keys(r).length > 0);
 }
 
 function detectTableName(filename: string): string {
-  const b = filename.toLowerCase();
-  const stem = b.split("/").pop() || b;
-  // common export names
-  if (stem.includes("watched")) return "watched";
-  if (stem.includes("ratings")) return "ratings";
-  if (stem.includes("diary")) return "diary";
-  if (stem.includes("reviews")) return "reviews";
-  if (stem.includes("likes")) return "likes";
+  const stem = (filename.toLowerCase().split("/").pop() || filename.toLowerCase());
+  if (stem === "watched.csv") return "watched";
+  if (stem === "ratings.csv") return "ratings";
+  if (stem === "diary.csv") return "diary";
+  if (stem === "reviews.csv") return "reviews";
+  if (stem === "comments.csv") return "comments";
+  if (stem === "profile.csv") return "profile";
   return "unknown";
 }
 
 export async function readLetterboxdExportZip(file: File): Promise<ExportTables> {
   const zip = await JSZip.loadAsync(file);
-  const files = Object.keys(zip.files).filter(f => f.toLowerCase().endsWith(".csv"));
+  const files = Object.keys(zip.files).filter((f) => f.toLowerCase().endsWith(".csv"));
   const tables: ExportTables = { files, unknown: {} };
 
   for (const fn of files) {
     const zf = zip.file(fn);
     if (!zf) continue;
-    const text = await zf.async("string");
-    const rows = parseCSV(text);
+    const rows = parseCSV(await zf.async("string"));
     const kind = detectTableName(fn);
-
     if (kind === "watched") tables.watched = rows;
     else if (kind === "ratings") tables.ratings = rows;
     else if (kind === "diary") tables.diary = rows;
     else if (kind === "reviews") tables.reviews = rows;
-    else if (kind === "likes") tables.likes = rows;
+    else if (kind === "comments") tables.comments = rows;
+    else if (kind === "profile") tables.profile = rows;
     else tables.unknown[fn] = rows;
   }
-
   return tables;
 }
 
-function makeKey(uri: string | null, name: string | null, year: number | null): FilmKey {
-  if (uri && uri.trim()) return uri.trim();
-  const n = (name || "").trim().toLowerCase();
-  const y = year ?? "";
-  return `${n}::${y}`;
+function makeKey(row: RawRow): FilmKey {
+  const uri = getField(row, ["Letterboxd URI", "Letterboxd Url", "Letterboxd link", "URI", "URL", "Link"]);
+  if (uri) return uri.trim();
+  const slug = getField(row, ["Slug", "Name slug"]);
+  if (slug) return `slug:${slug.trim().toLowerCase()}`;
+  const name = getField(row, ["Name", "Film", "Title"]) || "unknown";
+  const year = safeNum(getField(row, ["Year"])) ?? "";
+  return `fallback:${name.trim().toLowerCase()}::${year}`;
 }
 
-export function mergeTablesToFilms(t: ExportTables): FilmRecord[] {
+export function mergeTablesToFilms(t: ExportTables): { films: FilmRecord[]; debug: MergeDebug } {
   const map = new Map<FilmKey, FilmRecord>();
+  const watchedSet = new Set<FilmKey>();
+  let ratingsHits = 0;
+  let reviewsHits = 0;
 
   function upsert(row: RawRow): FilmRecord {
-    const name = getField(row, ["Name", "Film", "Title"]) || "Unknown";
-    const year = safeNum(getField(row, ["Year"])) ?? null;
-    const uri = getField(row, ["Letterboxd URI", "Letterboxd Uri", "URI", "Url", "URL"]) || null;
-    const key = makeKey(uri, name, year);
-
+    const key = makeKey(row);
     const existing = map.get(key);
     if (existing) return existing;
-
     const rec: FilmRecord = {
-      key,
-      name,
-      year,
-      letterboxdUri: uri,
+      film_id: key,
+      name: getField(row, ["Name", "Film", "Title"]) || "Unknown",
+      year: safeNum(getField(row, ["Year"])),
+      letterboxdUri: getField(row, ["Letterboxd URI", "URI", "URL", "Link"]),
       watched: false,
-      watchedDates: [],
-      rated: false,
       rating: null,
-      ratedDates: [],
-      rewatchCount: 0,
-      reviewCount: 0,
-      reviewTextSamples: [],
-      liked: false
+      review_text: [],
+      diary_entries: [],
+      watch_dates: [],
+      watched_at: null,
+      logged_at: null,
+      imported_at: null,
+      hasEstimatedDate: false
     };
     map.set(key, rec);
     return rec;
   }
 
-  // watched
   for (const row of t.watched || []) {
     const rec = upsert(row);
     rec.watched = true;
-    const d = toISODateOnly(getField(row, ["Watched Date", "Date"]));
-    if (d) rec.watchedDates.push(d);
+    watchedSet.add(rec.film_id);
   }
 
-  // ratings
   for (const row of t.ratings || []) {
     const rec = upsert(row);
-    rec.rated = true;
-    const r = safeNum(getField(row, ["Rating", "Rated", "Stars"]));
-    if (r !== null) rec.rating = r;
-    const d = toISODateOnly(getField(row, ["Date", "Rated Date"]));
-    if (d) rec.ratedDates.push(d);
+    if (watchedSet.has(rec.film_id)) ratingsHits += 1;
+    const rating = safeNum(getField(row, ["Rating", "Rated", "Stars"]));
+    if (rating !== null) rec.rating = rating;
+    const logged = toISODateOnly(getField(row, ["Date", "Rated Date", "Last watched date"]));
+    if (logged) rec.logged_at = logged;
   }
 
-  // diary entries
+  for (const row of t.reviews || []) {
+    const rec = upsert(row);
+    if (watchedSet.has(rec.film_id)) reviewsHits += 1;
+    const review = getField(row, ["Review", "Text", "Content"]);
+    if (review) rec.review_text.push(review.trim());
+  }
+
   for (const row of t.diary || []) {
     const rec = upsert(row);
     rec.watched = true;
-
-    const d = toISODateOnly(getField(row, ["Date", "Watched Date"]));
-    if (d) rec.watchedDates.push(d);
-
-    const r = safeNum(getField(row, ["Rating"]));
-    if (r !== null) {
-      rec.rated = true;
-      rec.rating = r;
+    const watchedAt = toISODateOnly(getField(row, ["Watched Date", "Date"]));
+    const loggedAt = toISODateOnly(getField(row, ["Date", "Logged Date"]));
+    const tagsRaw = getField(row, ["Tags"]);
+    const tags = tagsRaw ? tagsRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const rewatch = /^(yes|true|1)$/i.test(getField(row, ["Rewatch"]) || "");
+    rec.diary_entries.push({ watched_at: watchedAt, logged_at: loggedAt, tags, rewatch });
+    if (watchedAt) rec.watch_dates.push(watchedAt);
+    else if (loggedAt) {
+      rec.watch_dates.push(loggedAt);
+      rec.hasEstimatedDate = true;
     }
-
-    const rewatch = (getField(row, ["Rewatch"]) || "").trim().toLowerCase();
-    if (rewatch === "yes" || rewatch === "true" || rewatch === "1") rec.rewatchCount += 1;
   }
 
-  // reviews
-  for (const row of t.reviews || []) {
-    const rec = upsert(row);
-    rec.reviewCount += 1;
-    const txt = getField(row, ["Review", "Text", "Content"]);
-    if (txt && txt.trim()) rec.reviewTextSamples.push(txt.trim().slice(0, 500));
-  }
+  const films = Array.from(map.values()).map((f) => {
+    const dates = Array.from(new Set(f.watch_dates)).sort();
+    const diaryWatched = f.diary_entries.map((d) => d.watched_at).filter(Boolean) as string[];
+    const diaryLogged = f.diary_entries.map((d) => d.logged_at).filter(Boolean) as string[];
+    return {
+      ...f,
+      watch_dates: dates,
+      watched_at: diaryWatched.sort().at(-1) || null,
+      logged_at: diaryLogged.sort().at(-1) || f.logged_at,
+      imported_at: new Date().toISOString().slice(0, 10)
+    };
+  });
 
-  // likes (may exist)
-  for (const row of t.likes || []) {
-    const rec = upsert(row);
-    rec.liked = true;
-  }
+  const onlyInRatingsOrReviews = films.filter((f) => !f.watched && (f.rating !== null || f.review_text.length > 0)).length;
 
-  // final cleanup
-  const out = Array.from(map.values());
-  for (const rec of out) {
-    rec.watchedDates = Array.from(new Set(rec.watchedDates)).sort();
-    rec.ratedDates = Array.from(new Set(rec.ratedDates)).sort();
-  }
-  return out;
+  return {
+    films,
+    debug: {
+      csvDetected: t.files,
+      mergedFilmCount: films.length,
+      percentWithWatchedAt: films.length ? films.filter((f) => !!f.watched_at).length / films.length : 0,
+      ratingsMergeHitRate: (t.ratings || []).length ? ratingsHits / (t.ratings || []).length : 0,
+      reviewsMergeHitRate: (t.reviews || []).length ? reviewsHits / (t.reviews || []).length : 0,
+      onlyInRatingsOrReviews
+    }
+  };
 }
