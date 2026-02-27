@@ -1,13 +1,89 @@
 # Letterboxd AI Review
 
-一个**无需登录、纯前端解析**的 Letterboxd 数据分析与 AI 点评工具。你可以上传 Letterboxd 导出的 ZIP（或直接加载仓库内官方样本），在浏览器里完成数据合并、统计分析、可视化展示，并生成 AI 风格化评价（夸奖 / 锐评）。
+A no-login web app to analyze your Letterboxd export ZIP locally, generate rich stats/visualizations, and produce AI roast/praise based on merged data.
 
-## 在线地址
-Official sample input for regression/dev: `public/sample_data.zip` (also available at `/sample_data.zip` in production builds). Use the **Use sample_data.zip** button in the UI to run the same merge pipeline without manual upload.
+## Live site
 
-- No database, no persistence, refresh = clear.
-- Frontend static on Cloudflare Pages.
-- AI proxy via Pages Functions `/api/ai`.
+- Production: **https://erikdev.cc**
+
+## What this project does
+
+Letterboxd exports contain multiple CSV files (`watched.csv`, `ratings.csv`, `diary.csv`, `reviews.csv`, etc.).
+This app merges them into one master film dataset and provides:
+
+- core watched/rated statistics
+- activity and distribution charts
+- shareable summary text + share card image
+- AI commentary (roast/praise)
+- debug panel to inspect merge quality and anomalies
+
+---
+
+## Features
+
+### 1) Import options
+
+- Upload your own Letterboxd ZIP.
+- Click **Use sample_data.zip** to load the official sample from `/sample_data.zip` (`public/sample_data.zip`) using the exact same import pipeline.
+
+### 2) CSV parsing and merge rules
+
+Top-level CSVs recognized (when present):
+
+- `watched.csv`
+- `ratings.csv`
+- `reviews.csv`
+- `diary.csv`
+- `watchlist.csv`
+- `profile.csv`
+- `comments.csv`
+
+Current merge behavior:
+
+- `watched.csv` sets the watched baseline (`watched=true`)
+- `ratings.csv` writes rating fields
+- `reviews.csv` writes review text fields
+- `diary.csv` provides watch timeline (`watched_at` preferred, fallback to logged date), rewatch, tags
+- `comments.csv` is **not** treated as reviews
+
+### 3) Visualizations and stats
+
+After import, the app shows:
+
+- watched/rated totals
+- mean/median rating
+- longest streak
+- monthly activity heatmap
+- rating histogram
+- release year/decade distributions
+
+### 4) AI output
+
+Supports roast/praise modes and intensity levels.
+Default backend path is DeepSeek (with optional OpenAI-compatible/Gemini settings in UI).
+AI input is generated from merged master data + computed stats.
+
+### 5) Debug summary
+
+A toggleable debug panel shows merge diagnostics such as:
+
+- detected CSV list
+- merged film totals
+- watched/date coverage
+- ratings/reviews hit rates
+- import spike metrics
+- sampled films with field/source presence
+
+---
+
+## Tech stack
+
+- React + TypeScript + Vite
+- PapaParse + JSZip
+- html2canvas (share card export)
+- Cloudflare Pages Functions (`/api/ai`)
+
+---
 
 - 生产环境：**https://erikdev.cc**
 
@@ -116,66 +192,56 @@ npm run preview
 
 ---
 
-## 样本回归与自检
+## Sample verification
 
-仓库内已包含官方样本：
+Official sample data is included at:
 
 - `public/sample_data.zip`
 
-可以运行自检脚本：
+Run verification:
 
 ```bash
 npm run verify:sample
 ```
 
-该脚本会：
-
-- 加载 `public/sample_data.zip`
-- 执行解析与合并
-- 输出 debug summary
-- 对关键约束做断言（时间线来源、ratings/reviews 来源、comments 排除等）
+This command loads sample ZIP, runs parser+merge, prints debug summary, and validates key constraints.
 
 ---
 
-## Cloudflare Pages 部署说明
+## Cloudflare Pages deployment
 
 - Build command: `npm run build`
 - Output directory: `dist`
 
-### 推荐默认（DeepSeek）
+Recommended production env (DeepSeek):
 
-在 Production Variables/Secrets 中设置：
-
-- `OPENAI_API_KEY`（Secret）
-- `OPENAI_BASE_URL=https://api.deepseek.com`（不要带 `/v1`）
-- `OPENAI_MODEL=deepseek-chat`（或 `deepseek-reasoner`）
+- `OPENAI_API_KEY` (Secret)
+- `OPENAI_BASE_URL=https://api.deepseek.com` (without `/v1`)
+- `OPENAI_MODEL=deepseek-chat` (or `deepseek-reasoner`)
 
 ### 可选 Gemini 回退
 
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
 
-### 每日限流与白名单
+Rate-limit / bypass options:
 
 - `AI_DAILY_LIMIT=2`
-- 绑定 KV 命名空间到 `RLKV`
-- 可选白名单：`AI_BYPASS_IPS`（逗号分隔）
-
-变量或绑定修改后，需要重新部署 Production。
+- Bind KV namespace to `RLKV`
+- Optional `AI_BYPASS_IPS` (comma-separated)
 
 ---
 
-## 隐私与数据说明
+## Privacy
 
-- 本项目设计目标是**本地解析、无登录、无数据库持久化**。
-- 刷新页面会清空当前前端状态。
-- 调用 AI 时会把整理后的统计摘要发送到 `/api/ai`（由部署环境执行下游模型请求）。
+- Parsing/stat calculations are done in-browser.
+- No login, no user database, refresh clears local state.
+- AI calls send generated profile/stat payload to `/api/ai` in your deployment.
 
 ---
 
-## 适用场景
+## Українська
 
-- 个人年度观影复盘
-- 与朋友分享风格画像
-- 校验 Letterboxd 导出数据质量
-- 给后续推荐/画像系统提供结构化输入
+Це вебзастосунок без логіну для локального аналізу ZIP-експорту Letterboxd.
+Він об’єднує CSV у єдину таблицю фільмів, будує статистику/графіки та генерує AI-огляд (roast/praise).
+Продакшн: **https://erikdev.cc**.
