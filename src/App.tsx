@@ -1,7 +1,13 @@
 import React, { useMemo, useState } from "react";
 import html2canvas from "html2canvas";
 import Toast from "./components/Toast";
-import { readLetterboxdExportZip, mergeTablesToFilms, FilmRecord, MergeAnomaly, MergeDebugSummary } from "./lib/letterboxd";
+import {
+  DatasetSummary,
+  FilmRecord,
+  getBestTimelineDates,
+  mergeTablesToFilms,
+  readLetterboxdExportZip,
+} from "./lib/letterboxd";
 import { computeStats, StatPack } from "./lib/stats";
 import { BarList } from "./components/BarList";
 import { Heatmap } from "./components/Heatmap";
@@ -9,208 +15,40 @@ import ShareCard from "./components/ShareCard";
 import { formatInt, formatPct, round1, round3 } from "./lib/utils";
 
 type Provider = "default" | "openai_compat" | "gemini";
-
 type Lang = "en" | "zh" | "uk";
 
-const I18N: Record<Lang, Record<string, string>> = {
-  en: {
-    title: "Letterboxd AI Review",
-    subtitle: "Local ZIP analysis + DeepSeek default AI",
-    reset: "Reset",
-    importTitle: "1) Import",
-    uploadHint: "Upload your Letterboxd export ZIP",
-    loadSample: "Use sample_data.zip",
-    debug: "Debug summary",
-    localOnly: "All parsing and stats are local in your browser. Refresh clears everything.",
-    label: "Label on share card",
-    language: "Language",
-    merged: "unique films merged",
-    watchedDates: "Watched dates",
-    reviewSamples: "Review text samples",
-    watched: "Watched",
-    rated: "Rated",
-    mean: "Mean",
-    streak: "Streak",
-    quickFacts: "Quick facts",
-    unrated: "Unrated watched",
-    commitment: "Commitment",
-    volatility: "Taste volatility",
-    noData: "No data",
-    share: "2) Share",
-    copySummary: "Copy summary",
-    downloadCard: "Download share card PNG",
-    ai: "3) AI Roast / Praise",
-    mode: "Mode",
-    roast: "Roast",
-    praise: "Praise",
-    level: "Intensity",
-    mild: "Mild",
-    normal: "Normal",
-    savage: "Savage",
-    provider: "Provider",
-    key: "API key (optional)",
-    keyHint: "Leave empty to use site default DeepSeek key",
-    baseUrl: "Base URL (OpenAI compatible)",
-    model: "Model",
-    generate: "Generate",
-    running: "Analyzing...",
-    aiOutput: "AI Output",
-    deepseekNote: "Default backend model is DeepSeek. Other models require your own API settings.",
-    aiProgress: "AI analysis progress",
-    tutorial: "Quick tutorial",
-    t1: "Export Letterboxd data: Settings → Data → Export ZIP.",
-    t2: "Upload ZIP here. No login. No database. Refresh = clear.",
-    t3: "Default AI uses site DeepSeek key. To use Gemini/GPT/Doubao, fill provider + key (+ baseUrl/model).",
-    t4: "Choose EN / 中文 / Українська to switch both UI and AI output language.",
-    extraStats: "Cinephile boards",
-    recBoard: "AI recommendation hooks",
-    github: "Project GitHub",
-    loading1: "Building full film dossier...",
-    loading2: "Extracting patterns from every watched title...",
-    loading3: "Writing a direct, non-generic critique...",
-    loading4: "Final polishing..."
-  },
-  zh: {
-    title: "Letterboxd AI 锐评",
-    subtitle: "本地 ZIP 分析 + 默认 DeepSeek",
-    reset: "重置",
-    importTitle: "1）导入",
-    uploadHint: "上传 Letterboxd 导出 ZIP",
-    loadSample: "使用 sample_data.zip",
-    debug: "调试摘要",
-    localOnly: "所有解析和统计都在浏览器本地完成。刷新即清空。",
-    label: "分享卡片标签",
-    language: "语言",
-    merged: "部唯一影片已合并",
-    watchedDates: "观看日期",
-    reviewSamples: "短评样本",
-    watched: "看过",
-    rated: "评分",
-    mean: "均分",
-    streak: "连看",
-    quickFacts: "快照",
-    unrated: "未评分观看",
-    commitment: "评分投入度",
-    volatility: "口味波动",
-    noData: "暂无数据",
-    share: "2）分享",
-    copySummary: "复制摘要",
-    downloadCard: "下载分享图卡 PNG",
-    ai: "3）AI 夸奖 / 锐评",
-    mode: "模式",
-    roast: "锐评",
-    praise: "夸奖",
-    level: "强度",
-    mild: "温和",
-    normal: "正常",
-    savage: "狠一点",
-    provider: "模型来源",
-    key: "API Key（可选）",
-    keyHint: "留空即使用站点默认 DeepSeek key",
-    baseUrl: "Base URL（OpenAI 兼容）",
-    model: "模型名",
-    generate: "生成",
-    running: "分析中...",
-    aiOutput: "AI 输出",
-    deepseekNote: "默认后端模型为 DeepSeek。其他模型需手动填写 API 配置。",
-    aiProgress: "AI 分析进度",
-    tutorial: "快速教程",
-    t1: "导出数据：Letterboxd 设置 → Data → Export ZIP。",
-    t2: "上传 ZIP 即可，无需登录，不落库，刷新即清空。",
-    t3: "默认走站点 DeepSeek；若用 Gemini/GPT/豆包，请填写 provider + key（可加 baseUrl/model）。",
-    t4: "选择 EN / 中文 / Українська，会同时切换界面和 AI 输出语言。",
-    extraStats: "影迷爽点板块",
-    recBoard: "AI 推荐钩子",
-    github: "项目 GitHub",
-    loading1: "正在构建全量观影档案...",
-    loading2: "正在从每一部影片提取偏好模式...",
-    loading3: "正在生成直接、不水的个人评价...",
-    loading4: "正在润色最终结果..."
-  },
-  uk: {
-    title: "Letterboxd AI Огляд",
-    subtitle: "Локальний аналіз ZIP + DeepSeek за замовчуванням",
-    reset: "Скинути",
-    importTitle: "1) Імпорт",
-    uploadHint: "Завантажте ZIP-експорт Letterboxd",
-    loadSample: "Використати sample_data.zip",
-    debug: "Налагоджувальний зведений звіт",
-    localOnly: "Усе обробляється локально в браузері. Оновлення сторінки очищує дані.",
-    label: "Підпис на картці",
-    language: "Мова",
-    merged: "унікальних фільмів об'єднано",
-    watchedDates: "дат перегляду",
-    reviewSamples: "текстів відгуків",
-    watched: "Переглянуто",
-    rated: "Оцінено",
-    mean: "Середня",
-    streak: "Серія",
-    quickFacts: "Ключові факти",
-    unrated: "Переглянуто без оцінки",
-    commitment: "Індекс залучення",
-    volatility: "Волатильність смаку",
-    noData: "Немає даних",
-    share: "2) Поділитися",
-    copySummary: "Копіювати підсумок",
-    downloadCard: "Завантажити PNG-картку",
-    ai: "3) AI Похвала / Рознос",
-    mode: "Режим",
-    roast: "Рознос",
-    praise: "Похвала",
-    level: "Інтенсивність",
-    mild: "М'яко",
-    normal: "Нормально",
-    savage: "Жорстко",
-    provider: "Провайдер",
-    key: "API ключ (необов'язково)",
-    keyHint: "Порожньо = ключ DeepSeek сайту",
-    baseUrl: "Base URL (OpenAI-сумісний)",
-    model: "Модель",
-    generate: "Згенерувати",
-    running: "Аналіз...",
-    aiOutput: "Відповідь AI",
-    deepseekNote: "Модель за замовчуванням: DeepSeek. Інші моделі — лише з вашим API.",
-    aiProgress: "Прогрес AI-аналізу",
-    tutorial: "Швидкий гайд",
-    t1: "Експорт у Letterboxd: Settings → Data → Export ZIP.",
-    t2: "Завантажте ZIP. Без логіну, без БД, refresh очищує все.",
-    t3: "Типово DeepSeek; для Gemini/GPT/Doubao заповніть provider + key (+ baseUrl/model).",
-    t4: "EN / 中文 / Українська перемикає і UI, і мову AI.",
-    extraStats: "Панелі для кіноманів",
-    recBoard: "AI рекомендації",
-    github: "GitHub проєкту",
-    loading1: "Формуємо повне досьє переглядів...",
-    loading2: "Витягуємо патерни з кожного переглянутого фільму...",
-    loading3: "Пишемо пряму, не шаблонну рецензію...",
-    loading4: "Фінальне шліфування..."
-  }
-};
+function ratingLabel(rating: number): string {
+  return String(rating);
+}
 
-function ratingLabel(r: number): string { return String(r); }
-
-function aiDossier(films: FilmRecord[], stats: StatPack, anomaly: MergeAnomaly | null) {
-  const sorted = [...films].sort((a, b) => {
-    const da = a.watchedDates[a.watchedDates.length - 1] || "0000-00-00";
-    const db = b.watchedDates[b.watchedDates.length - 1] || "0000-00-00";
-    return db.localeCompare(da);
-  });
-  const entries = sorted.map((f) => ({
-    n: f.name,
-    y: f.year,
-    r: f.rating,
-    w: f.watchedDates,
-    rw: f.rewatchCount,
-    rv: f.reviewTextSamples.slice(0, 1)
-  }));
+function aiDossier(films: FilmRecord[], stats: StatPack, summary: DatasetSummary | null) {
+  const entries = [...films]
+    .sort((left, right) => (right.bestWatchedDate || "0000-00-00").localeCompare(left.bestWatchedDate || "0000-00-00"))
+    .map((film) => ({
+      name: film.name,
+      year: film.year,
+      currentRating: film.currentRating,
+      loggedRating: film.loggedRating,
+      bestRating: film.bestRating,
+      bestWatchedDate: film.bestWatchedDate,
+      exactWatchedDate: film.exactWatchedDate,
+      estimatedWatchedDate: film.estimatedWatchedDate,
+      sources: film.sourceFlags.tables,
+      inWatchlist: film.inWatchlist,
+      rewatchCount: film.rewatchCount,
+      reviewSample: film.reviewTexts.slice(0, 1),
+    }));
 
   return {
-    totals: stats.totals,
-    rating: stats.ratings,
+    overview: stats.overview,
+    quickFacts: stats.quickFacts,
+    ratings: stats.ratings,
     activity: stats.activity,
-    anomaly,
-    release: stats.releaseYears,
-    topWords: stats.text.topWords,
-    films: entries
+    releaseYears: stats.releaseYears,
+    text: stats.text,
+    shareCard: stats.shareCard,
+    summary,
+    films: entries,
   };
 }
 
@@ -218,73 +56,130 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [films, setFilms] = useState<FilmRecord[] | null>(null);
-  const [stats, setStats] = useState<StatPack | null>(null);
-  const [mergeAnomaly, setMergeAnomaly] = useState<MergeAnomaly | null>(null);
-  const [debugSummary, setDebugSummary] = useState<MergeDebugSummary | null>(null);
-  const [showDebug, setShowDebug] = useState<boolean>(false);
-  const [label, setLabel] = useState<string>("");
+  const [datasetSummary, setDatasetSummary] = useState<DatasetSummary | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [label, setLabel] = useState("");
   const [language, setLanguage] = useState<Lang>("en");
   const [mode, setMode] = useState<"praise" | "roast">("roast");
   const [roastLevel, setRoastLevel] = useState<1 | 2 | 3>(2);
   const [provider, setProvider] = useState<Provider>("default");
-  const [apiKey, setApiKey] = useState<string>("");
-  const [baseUrl, setBaseUrl] = useState<string>("");
-  const [model, setModel] = useState<string>("");
-  const [aiText, setAiText] = useState<string>("");
-  const [aiBusy, setAiBusy] = useState<boolean>(false);
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [aiText, setAiText] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   const [aiProgress, setAiProgress] = useState(0);
 
-  const t = (k: string) => I18N[language][k] || k;
+  const stats = useMemo(
+    () => (films && datasetSummary ? computeStats(films, datasetSummary, label) : null),
+    [films, datasetSummary, label],
+  );
 
-  function showToast(msg: string) {
-    setToast(msg);
+  const ratingHistogram = stats
+    ? stats.ratings.current.histogram.map((item) => ({ label: ratingLabel(item.rating), value: item.count }))
+    : [];
+  const topReleaseYears = stats
+    ? stats.releaseYears.watchedFilms.topYears.map((item) => ({ label: String(item.year), value: item.count }))
+    : [];
+  const topDecades = stats
+    ? [...stats.releaseYears.watchedFilms.decadeBuckets]
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 8)
+      .map((item) => ({ label: item.decade, value: item.count }))
+    : [];
+
+  const quickFacts = useMemo(() => {
+    if (!stats) {
+      return [] as Array<{ label: string; value: string }>;
+    }
+    return [
+      {
+        label: "Watch entries",
+        value: `${formatInt(stats.overview.watchEntries.value)} (${formatInt(stats.overview.watchEntries.exactEntries)} exact / ${formatInt(stats.overview.watchEntries.estimatedEntries)} estimated)`,
+      },
+      { label: "Unrated watched films", value: formatInt(stats.quickFacts.unratedWatchedFilmsWithoutCurrentRating.value) },
+      { label: "Logged-rated films", value: formatInt(stats.quickFacts.loggedRatedFilms.value) },
+      { label: "Review rows", value: formatInt(stats.quickFacts.reviewRows.value) },
+      { label: "Watchlist films", value: formatInt(stats.quickFacts.watchlistFilms.value) },
+      { label: "Commitment", value: formatPct(stats.quickFacts.commitmentIndex.value) },
+      { label: "Current volatility", value: stats.quickFacts.currentRatingStddev.value === null ? "n/a" : String(round1(stats.quickFacts.currentRatingStddev.value)) },
+    ];
+  }, [stats]);
+
+  const coverageFacts = useMemo(() => {
+    if (!datasetSummary) {
+      return [] as Array<{ label: string; value: string }>;
+    }
+    return [
+      {
+        label: "Exact dated films",
+        value: `${formatInt(datasetSummary.dateQualitySummary.filmsWithExactDate)} / ${formatInt(datasetSummary.coverageSummary.watchedUniverseFilmCount)}`,
+      },
+      { label: "Estimated-only films", value: formatInt(datasetSummary.dateQualitySummary.filmsWithEstimatedOnly) },
+      { label: "Current+logged overlap", value: formatInt(datasetSummary.ratingSourceSummary.both) },
+      { label: "Changed current vs logged", value: formatInt(datasetSummary.ratingSourceSummary.changed) },
+      {
+        label: "Top import day",
+        value: datasetSummary.importSpikeSummary.largestSingleDayImportDate
+          ? `${datasetSummary.importSpikeSummary.largestSingleDayImportDate} (${formatInt(datasetSummary.importSpikeSummary.largestSingleDayImportCount)})`
+          : "n/a",
+      },
+      {
+        label: "Lists / archived",
+        value: `${formatInt(datasetSummary.listSummary.activeListCount)} / ${formatInt(datasetSummary.listSummary.archivedListCount)}`,
+      },
+    ];
+  }, [datasetSummary]);
+
+  function showToast(message: string) {
+    setToast(message);
     window.setTimeout(() => setToast(null), 2200);
   }
 
   async function importZip(input: Blob | ArrayBuffer, sourceName: string) {
     setAiText("");
-    setStats(null);
     setFilms(null);
-    setMergeAnomaly(null);
-    setDebugSummary(null);
+    setDatasetSummary(null);
     setFileName(sourceName);
     try {
       const tables = await readLetterboxdExportZip(input);
       const merged = mergeTablesToFilms(tables);
       setFilms(merged.films);
-      setMergeAnomaly(merged.anomaly);
-      setDebugSummary(merged.debug);
-      setStats(computeStats(merged.films, label));
+      setDatasetSummary(merged.summary);
       showToast("Import complete.");
     } catch {
       showToast("Import failed. Check ZIP format.");
     }
   }
 
-  async function onUploadZip(f: File) {
-    await importZip(f, f.name);
+  async function onUploadZip(file: File) {
+    await importZip(file, file.name);
   }
 
   async function onLoadSample() {
     try {
-      const res = await fetch('/sample_data.zip', { cache: 'no-store' });
-      if (!res.ok) throw new Error('sample_data.zip not found');
-      const buf = await res.arrayBuffer();
-      await importZip(buf, 'sample_data.zip');
+      const res = await fetch("/sample_data.zip", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error("sample_data.zip not found");
+      }
+      const buffer = await res.arrayBuffer();
+      await importZip(buffer, "sample_data.zip");
     } catch {
-      showToast('Failed to load sample_data.zip');
+      showToast("Failed to load sample_data.zip");
     }
   }
 
   async function downloadShareCard() {
     const el = document.getElementById("shareCard");
-    if (!el) return showToast("Share card not ready.");
+    if (!el) {
+      return showToast("Share card not ready.");
+    }
     const canvas = await html2canvas(el as HTMLElement, { backgroundColor: null, scale: 2 });
     const url = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "letterboxd-ai-card.png";
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "letterboxd-ai-card.png";
+    anchor.click();
   }
 
   async function runAI() {
@@ -292,9 +187,9 @@ export default function App() {
     setAiBusy(true);
     setAiText("");
     setAiProgress(8);
-    const id = window.setInterval(() => setAiProgress((p) => Math.min(p + 7, 92)), 700);
+    const id = window.setInterval(() => setAiProgress((value) => Math.min(value + 7, 92)), 700);
     try {
-      const dossier = aiDossier(films, stats, mergeAnomaly);
+      const dossier = aiDossier(films, stats, datasetSummary);
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -306,8 +201,8 @@ export default function App() {
           language,
           mode,
           roastLevel,
-          profile: dossier
-        })
+          profile: dossier,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { text?: unknown; error?: unknown };
       if (!res.ok) {
@@ -325,170 +220,252 @@ export default function App() {
     }
   }
 
-  const topDecades = stats?.releaseYears.decadeBuckets ? [...stats.releaseYears.decadeBuckets].sort((a, b) => b.count - a.count).slice(0, 8).map((d) => ({ label: d.decade, value: d.count })) : [];
-  const topReleaseYears = stats?.releaseYears.top ? stats.releaseYears.top.map((y) => ({ label: String(y.year), value: y.count })) : [];
-  const ratingHistogram = stats?.ratings.histogram ? stats.ratings.histogram.map((h) => ({ label: ratingLabel(h.rating), value: h.count })) : [];
-
-  const altTasteBoard = useMemo(() => {
-    if (!films || !stats) return [] as Array<{ label: string; value: string }>;
-    const high = films.filter((f) => (f.rating ?? 0) >= 4).length;
-    const low = films.filter((f) => (f.rating ?? 5) <= 2).length;
-    const rewatchShare = stats.totals.filmsWatched ? Math.round((stats.totals.rewatchFilms / stats.totals.filmsWatched) * 100) : 0;
-    const oldies = films.filter((f) => (f.year ?? 3000) < 1980).length;
-    return [
-      { label: "Exploration Index", value: `${Math.max(0, 100 - rewatchShare)} / 100` },
-      { label: "Harshness", value: `${Math.round((low / Math.max(1, high + low)) * 100)}%` },
-      { label: "Rewatch DNA", value: `${rewatchShare}%` },
-      { label: "Classic pull", value: `${oldies} films pre-1980` },
-      { label: "Unrated behavior", value: `${stats.totals.unratedWatched} unrated watched` },
-    ];
-  }, [films, stats]);
+  const exactEntries = stats?.overview.watchEntries.exactEntries || 0;
+  const estimatedEntries = stats?.overview.watchEntries.estimatedEntries || 0;
+  const debugJson = datasetSummary ? JSON.stringify(datasetSummary, null, 2) : "";
+  const sampleTimeline = films ? films.slice(0, 3).map((film) => ({ film: film.name, timeline: getBestTimelineDates(film) })) : [];
 
   return (
     <div className="container">
       <div className="topbar">
         <div className="brand">
-          <h1>🎬 {t("title")}</h1>
-          <div className="sub">{t("subtitle")}</div>
+          <h1>Letterboxd AI Review</h1>
+          <div className="sub">Generic Letterboxd ZIP parsing with corrected data semantics.</div>
         </div>
         <div className="row">
-          <a className="badge" href="https://github.com/Erik0318/Letterboxd-AI-Review" target="_blank" rel="noreferrer">{t("github")}</a>
-          <button className="btn danger" onClick={() => window.location.reload()}>{t("reset")}</button>
+          <a className="badge" href="https://github.com/Erik0318/Letterboxd-AI-Review" target="_blank" rel="noreferrer">Project GitHub</a>
+          <button className="btn danger" onClick={() => window.location.reload()}>Reset</button>
         </div>
       </div>
 
       <div className="grid">
         <div className="card">
-          <h2>{t("importTitle")}</h2>
+          <h2>1) Import</h2>
           <div className="drop">
-            <input type="file" accept=".zip" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onUploadZip(f); }} />
-            <div className="small">{fileName || t("uploadHint")}</div>
-            <div className="small">{t("localOnly")}</div>
-            <button className="btn primary" style={{ marginTop: 10 }} onClick={onLoadSample}>{t("loadSample")}</button>
+            <input type="file" accept=".zip" onChange={(e) => { const file = e.target.files?.[0]; if (file) void onUploadZip(file); }} />
+            <div className="small">{fileName || "Upload your Letterboxd export ZIP"}</div>
+            <div className="small">All parsing and stats run locally in your browser. Refresh clears everything.</div>
+            <button className="btn primary" style={{ marginTop: 10 }} onClick={onLoadSample}>Use sample_data.zip</button>
           </div>
 
           <div className="row" style={{ marginTop: 12 }}>
             <div>
-              <div className="small">{t("label")}</div>
+              <div className="small">Label on share card</div>
               <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional" />
             </div>
             <div>
-              <div className="small">{t("language")}</div>
+              <div className="small">AI language</div>
               <select value={language} onChange={(e) => setLanguage(e.target.value as Lang)}>
                 <option value="en">English</option>
-                <option value="zh">中文</option>
-                <option value="uk">Українська</option>
+                <option value="zh">Chinese</option>
+                <option value="uk">Ukrainian</option>
               </select>
             </div>
           </div>
 
           <div className="hr" />
-          <h2>{t("tutorial")}</h2>
+          <h2>Quick tutorial</h2>
           <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-            <li>{t("t1")}</li><li>{t("t2")}</li><li>{t("t3")}</li><li>{t("t4")}</li>
+            <li>Export Letterboxd data from Settings to a ZIP file.</li>
+            <li>Upload any user export here. The sample ZIP is only a regression fixture.</li>
+            <li>Current phase focuses on parser, merge and stats correctness instead of new UI modules.</li>
+            <li>The debug summary below is the fastest way to validate unfamiliar exports.</li>
           </ul>
 
-          {films && <div className="row" style={{ marginTop: 10 }}>
-            <span className="badge">{formatInt(films.length)} {t("merged")}</span>
-            <span className="badge">{t("watchedDates")}: {formatInt(films.flatMap((f) => f.watchedDates).length)}</span>
-            <span className="badge">{t("reviewSamples")}: {formatInt(films.flatMap((f) => f.reviewTextSamples).length)}</span>
-          </div>}
+          {stats && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <span className="badge">{formatInt(films?.length || 0)} merged film records</span>
+              <span className="badge">{formatInt(stats.overview.watchedFilmsUnique.value)} watched films</span>
+              <span className="badge">{formatInt(stats.overview.watchEntries.value)} watch entries</span>
+              <span className="badge">{formatInt(stats.quickFacts.watchlistFilms.value)} watchlist films</span>
+              <span className="badge">{formatInt(stats.quickFacts.reviewRows.value)} review rows</span>
+            </div>
+          )}
 
-          {debugSummary && <div style={{ marginTop: 10 }}>
-            <label className="small" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="checkbox" checked={showDebug} onChange={(e) => setShowDebug(e.target.checked)} /> {t("debug")}
-            </label>
-            {showDebug && <div className="card" style={{ marginTop: 8 }}>
-              <div className="small">csv: {debugSummary.csvDetected.join(", ") || "none"}</div>
-              <div className="small">films total: {debugSummary.filmTotal}</div>
-              <div className="small">watched=true: {debugSummary.watchedTrueCount}</div>
-              <div className="small">watched_at coverage: {formatPct(debugSummary.watchedAtCoverage)}</div>
-              <div className="small">ratings hit rate: {formatPct(debugSummary.ratingsHitRate)}</div>
-              <div className="small">reviews hit rate: {formatPct(debugSummary.reviewsHitRate)}</div>
-              <div className="small">only-in-ratings not-in-watched: {debugSummary.onlyInRatingsNotInWatched}</div>
-              <div className="small">only-in-reviews not-in-watched: {debugSummary.onlyInReviewsNotInWatched}</div>
-              <div className="small">watched_true_with_dates_count: {debugSummary.watchedTrueWithDatesCount}</div>
-              <div className="small">watched_true_without_dates_count: {debugSummary.watchedTrueWithoutDatesCount}</div>
-              <div className="small">diary_rows_total: {debugSummary.diaryRowsTotal}</div>
-              <div className="small">diary_rows_matched_to_watched_count: {debugSummary.diaryRowsMatchedToWatchedCount}</div>
-              <div className="small">reviews_rows_matched_to_watched_count: {debugSummary.reviewsRowsMatchedToWatchedCount}</div>
-              <div className="small">largestSingleDayImportCount: {debugSummary.largestSingleDayImportCount} ({debugSummary.largestSingleDayImportDate || "n/a"})</div>
-              <div className="small">watchedDateSpanYears: {debugSummary.watchedDateSpanYears}</div>
-              <div className="small">importSpikeDetected: {String(debugSummary.importSpikeDetected)}</div>
-              <div className="small" style={{ marginTop: 8 }}>sample films:</div>
-              {debugSummary.randomFilmSamples.map((x) => (
-                <div className="small" key={x.key}>• {x.name} [{x.sources.join("/")}] dates:{x.watchDatesCount} rating:{String(x.hasRating)} review:{String(x.hasReview)} tags:{String(x.hasTags)}</div>
-              ))}
-            </div>}
-          </div>}
+          {datasetSummary && (
+            <div style={{ marginTop: 10 }}>
+              <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={showDebug} onChange={(e) => setShowDebug(e.target.checked)} /> Debug summary
+              </label>
+              {showDebug && (
+                <div className="card" style={{ marginTop: 8 }}>
+                  <div className="small">recognized files: {datasetSummary.recognizedFiles.join(", ") || "none"}</div>
+                  <div className="small">unknown files: {datasetSummary.unknownFiles.map((item) => item.path).join(", ") || "none"}</div>
+                  <div className="small">exact date coverage: {formatPct(datasetSummary.dateQualitySummary.exactCoverage)}</div>
+                  <div className="small">lists parsed: {formatInt(datasetSummary.listSummary.activeListCount)} active / {formatInt(datasetSummary.listSummary.archivedListCount)} archived</div>
+                  <div className="small">likes rows: {formatInt(datasetSummary.archiveSummary.likes.filmRows + datasetSummary.archiveSummary.likes.reviewRows + datasetSummary.archiveSummary.likes.listRows)}</div>
+                  <div className="small">sample timeline probe: {JSON.stringify(sampleTimeline)}</div>
+                  <pre style={{ whiteSpace: "pre-wrap", margin: "10px 0 0", overflowX: "auto", fontSize: 12, color: "var(--muted)" }}>
+                    {debugJson}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {stats && <>
-          <div className="card span3"><h2>{t("watched")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsWatched)}</div></div></div>
-          <div className="card span3"><h2>{t("rated")}</h2><div className="kpi"><div className="value">{formatInt(stats.totals.filmsRated)}</div></div></div>
-          <div className="card span3"><h2>{t("mean")}</h2><div className="kpi"><div className="value">{stats.ratings.mean === null ? "n/a" : round3(stats.ratings.mean)}</div></div></div>
-          <div className="card span3"><h2>{t("streak")}</h2><div className="kpi"><div className="value">{formatInt(stats.activity.longestStreakDays)}</div></div></div>
-
-          <div className="card span6">
-            <h2>{t("quickFacts")}</h2>
-            <div className="row" style={{ alignItems: "stretch" }}>
-              <div className="kpi" style={{ flex: 1 }}><div className="label">{t("unrated")}</div><div className="value">{formatInt(stats.totals.unratedWatched)}</div></div>
-              <div className="kpi" style={{ flex: 1 }}><div className="label">{t("commitment")}</div><div className="value">{formatPct(stats.fun.commitmentIndex)}</div></div>
-              <div className="kpi" style={{ flex: 1 }}><div className="label">{t("volatility")}</div><div className="value">{stats.fun.tasteVolatilityIndex === null ? "n/a" : round1(stats.fun.tasteVolatilityIndex)}</div></div>
+        {stats && datasetSummary && (
+          <>
+            <div className="card span3">
+              <h2>Watched Films</h2>
+              <div className="kpi">
+                <div className="value">{formatInt(stats.overview.watchedFilmsUnique.value)}</div>
+                <div className="label">unique film-level watched universe</div>
+              </div>
             </div>
-          </div>
-
-          <div className="card span6">
-            <h2>{t("extraStats")}</h2>
-            <div className="row">
-              {altTasteBoard.map((x) => <div className="badge" key={x.label}>{x.label}: {x.value}</div>)}
+            <div className="card span3">
+              <h2>Current Rated</h2>
+              <div className="kpi">
+                <div className="value">{formatInt(stats.overview.currentRatedFilms.value)}</div>
+                <div className="label">unique films with current rating</div>
+              </div>
             </div>
-          </div>
-
-          <div className="span6"><BarList title="Rating histogram" items={ratingHistogram} emptyText={t("noData")} /></div>
-          <div className="span6"><Heatmap byMonth={stats.activity.byMonth} /></div>
-          <div className="span6"><BarList title="Top release years" items={topReleaseYears} emptyText={t("noData")} /></div>
-          <div className="span6"><BarList title="Top decades" items={topDecades} emptyText={t("noData")} /></div>
-
-          <div className="card">
-            <h2>{t("share")}</h2>
-            <div className="row">
-              <button className="btn primary" onClick={async () => { await navigator.clipboard.writeText(stats.shareText.long); showToast("Copied"); }}>{t("copySummary")}</button>
-              <button className="btn primary" onClick={downloadShareCard}>{t("downloadCard")}</button>
+            <div className="card span3">
+              <h2>Current Mean</h2>
+              <div className="kpi">
+                <div className="value">{stats.overview.currentMeanRating.value === null ? "n/a" : round3(stats.overview.currentMeanRating.value)}</div>
+                <div className="label">based on currentRating only</div>
+              </div>
             </div>
-            <div style={{ marginTop: 12 }}>
-              <ShareCard
-                stats={stats}
-                label={label}
-                labels={{ generated: "Generated", badge: "Badge", watched: t("watched"), rated: t("rated"), meanRating: "Mean", median: "Median", longestStreak: "Streak", commitment: t("commitment"), topWords: "Top words", oneLine: "One line", na: "n/a", titleSuffix: "taste report" }}
+            <div className="card span3">
+              <h2>Best Streak</h2>
+              <div className="kpi">
+                <div className="value">{formatInt(stats.overview.bestStreakDays.value)}</div>
+                <div className="label">{formatInt(stats.overview.bestStreakDays.exactOnlyValue)} exact only</div>
+              </div>
+            </div>
+
+            <div className="card span6">
+              <h2>Quick Facts</h2>
+              <div className="row">
+                {quickFacts.map((item) => <div className="badge" key={item.label}>{item.label}: {item.value}</div>)}
+              </div>
+            </div>
+
+            <div className="card span6">
+              <h2>Coverage</h2>
+              <div className="row">
+                {coverageFacts.map((item) => <div className="badge" key={item.label}>{item.label}: {item.value}</div>)}
+              </div>
+            </div>
+
+            <div className="span6">
+              <BarList title="Current rating histogram" items={ratingHistogram} emptyText="No rating data." />
+            </div>
+            <div className="span6">
+              <Heatmap
+                byMonth={stats.activity.heatmap.byMonth}
+                title="Watch timeline (exact + estimated fallback)"
+                emptyText="No watch dates found in the export."
+                footerText={`${formatInt(exactEntries)} exact entries, ${formatInt(estimatedEntries)} estimated fallback rows.`}
               />
             </div>
-          </div>
-
-          <div className="card">
-            <h2>{t("ai")}</h2>
-            <div className="row">
-              <div><div className="small">{t("mode")}</div><select value={mode} onChange={(e) => setMode(e.target.value as any)}><option value="roast">{t("roast")}</option><option value="praise">{t("praise")}</option></select></div>
-              <div><div className="small">{t("level")}</div><select value={roastLevel} onChange={(e) => setRoastLevel(Number(e.target.value) as any)}><option value={1}>{t("mild")}</option><option value={2}>{t("normal")}</option><option value={3}>{t("savage")}</option></select></div>
-              <div><div className="small">{t("provider")}</div><select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}><option value="default">Default (DeepSeek)</option><option value="openai_compat">DeepSeek / GPT / Doubao</option><option value="gemini">Gemini</option></select></div>
-              <div style={{ flex: 1, minWidth: 220 }}><div className="small">{t("key")}</div><input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={t("keyHint")} /></div>
+            <div className="span6">
+              <BarList title="Top watched release years (unique films)" items={topReleaseYears} emptyText="No watched release years." />
             </div>
-            <div className="row" style={{ marginTop: 10 }}>
-              <div style={{ flex: 1, minWidth: 220 }}><div className="small">{t("baseUrl")}</div><input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" /></div>
-              <div style={{ flex: 1, minWidth: 220 }}><div className="small">{t("model")}</div><input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" /></div>
-              <button className="btn primary" onClick={runAI} disabled={aiBusy}>{aiBusy ? t("running") : t("generate")}</button>
+            <div className="span6">
+              <BarList title="Top watched decades (unique films)" items={topDecades} emptyText="No watched decades." />
             </div>
-            <p className="small" style={{ marginTop: 10 }}>{t("deepseekNote")}</p>
 
-            {aiBusy && <div className="kpi" style={{ marginTop: 10 }}>
-              <div className="label">{t("aiProgress")}</div>
-              <div className="bar" style={{ height: 14, marginTop: 8 }}><div style={{ width: `${aiProgress}%` }} /></div>
-              <div className="small" style={{ marginTop: 6 }}>{aiProgress < 30 ? t("loading1") : aiProgress < 60 ? t("loading2") : aiProgress < 85 ? t("loading3") : t("loading4")}</div>
-            </div>}
+            <div className="card">
+              <h2>2) Share</h2>
+              <div className="row">
+                <button className="btn primary" onClick={async () => { await navigator.clipboard.writeText(stats.shareText.long); showToast("Copied"); }}>
+                  Copy summary
+                </button>
+                <button className="btn primary" onClick={downloadShareCard}>
+                  Download share card PNG
+                </button>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <ShareCard
+                  stats={stats}
+                  label={label}
+                  labels={{
+                    generated: "Generated",
+                    badge: "Badge",
+                    watched: "Watched films",
+                    rated: "Current ratings",
+                    meanRating: "Current mean",
+                    median: "Current median",
+                    longestStreak: "Best streak",
+                    commitment: "Commitment",
+                    topWords: "Top words",
+                    oneLine: "One line",
+                    na: "n/a",
+                    titleSuffix: "taste report",
+                  }}
+                />
+              </div>
+            </div>
 
-            {aiText && <div className="card" style={{ marginTop: 12 }}><h2>{t("aiOutput")}</h2><pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", color: "var(--text)" }}>{aiText}</pre></div>}
-          </div>
-        </>}
+            <div className="card">
+              <h2>3) AI Roast / Praise</h2>
+              <div className="row">
+                <div>
+                  <div className="small">Mode</div>
+                  <select value={mode} onChange={(e) => setMode(e.target.value as "praise" | "roast")}>
+                    <option value="roast">Roast</option>
+                    <option value="praise">Praise</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="small">Intensity</div>
+                  <select value={roastLevel} onChange={(e) => setRoastLevel(Number(e.target.value) as 1 | 2 | 3)}>
+                    <option value={1}>Mild</option>
+                    <option value={2}>Normal</option>
+                    <option value={3}>Savage</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="small">Provider</div>
+                  <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+                    <option value="default">Default (DeepSeek)</option>
+                    <option value="openai_compat">DeepSeek / GPT / Doubao</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="small">API key</div>
+                  <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Optional" />
+                </div>
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="small">Base URL</div>
+                  <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="small">Model</div>
+                  <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
+                </div>
+                <button className="btn primary" onClick={runAI} disabled={aiBusy}>
+                  {aiBusy ? "Analyzing..." : "Generate"}
+                </button>
+              </div>
+              <p className="small" style={{ marginTop: 10 }}>
+                Default backend model is DeepSeek. Other models require your own API settings.
+              </p>
+
+              {aiBusy && (
+                <div className="kpi" style={{ marginTop: 10 }}>
+                  <div className="label">AI analysis progress</div>
+                  <div className="bar" style={{ height: 14, marginTop: 8 }}><div style={{ width: `${aiProgress}%` }} /></div>
+                  <div className="small" style={{ marginTop: 6 }}>
+                    {aiProgress < 30 ? "Building full film dossier..." : aiProgress < 60 ? "Extracting patterns..." : aiProgress < 85 ? "Writing critique..." : "Final polishing..."}
+                  </div>
+                </div>
+              )}
+
+              {aiText && (
+                <div className="card" style={{ marginTop: 12 }}>
+                  <h2>AI Output</h2>
+                  <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", color: "var(--text)" }}>{aiText}</pre>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <Toast text={toast} />

@@ -1,62 +1,53 @@
-import { readFile } from 'node:fs/promises';
-import { readLetterboxdExportZip, mergeTablesToFilms } from '../.verify/letterboxd.js';
+import { readFile } from "node:fs/promises";
+import { computeStats } from "../.verify/stats.js";
+import { mergeTablesToFilms, readLetterboxdExportZip } from "../.verify/letterboxd.js";
 
 function assertThat(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function dateToEpochDay(iso) {
-  return Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / 86400000);
-}
-
-function longestStreak(days) {
-  const sorted = Array.from(new Set(days)).sort();
-  if (!sorted.length) return 0;
-  let best = 1;
-  let cur = 1;
-  for (let i = 1; i < sorted.length; i += 1) {
-    if (dateToEpochDay(sorted[i]) === dateToEpochDay(sorted[i - 1]) + 1) cur += 1;
-    else cur = 1;
-    if (cur > best) best = cur;
+  if (!condition) {
+    throw new Error(message);
   }
-  return best;
 }
 
-const zip = await readFile('public/sample_data.zip');
-const ab = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength);
-const tables = await readLetterboxdExportZip(ab);
+const zip = await readFile("public/sample_data.zip");
+const arrayBuffer = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength);
+const tables = await readLetterboxdExportZip(arrayBuffer);
 const merged = mergeTablesToFilms(tables);
+const stats = computeStats(merged.films, merged.summary, "Sample");
 
-console.log('Sample debug summary:');
+console.log("Sample dataset summary:");
 console.log(JSON.stringify({
-  detectedCsv: merged.debug.csvDetected,
-  filmTotal: merged.debug.filmTotal,
-  watchedTrueCount: merged.debug.watchedTrueCount,
-  watchedAtCoverage: merged.debug.watchedAtCoverage,
-  ratingsHitRate: merged.debug.ratingsHitRate,
-  reviewsHitRate: merged.debug.reviewsHitRate,
-  onlyInRatingsNotInWatched: merged.debug.onlyInRatingsNotInWatched,
-  onlyInReviewsNotInWatched: merged.debug.onlyInReviewsNotInWatched,
-  watchedTrueWithDatesCount: merged.debug.watchedTrueWithDatesCount,
-  watchedTrueWithoutDatesCount: merged.debug.watchedTrueWithoutDatesCount,
-  diaryRowsTotal: merged.debug.diaryRowsTotal,
-  diaryRowsMatchedToWatchedCount: merged.debug.diaryRowsMatchedToWatchedCount,
-  reviewsRowsMatchedToWatchedCount: merged.debug.reviewsRowsMatchedToWatchedCount,
-  importSpikeDetected: merged.anomaly.importSpikeDetected,
-  largestSingleDayImportCount: merged.anomaly.largestSingleDayImportCount,
-  largestSingleDayImportDate: merged.anomaly.largestSingleDayImportDate,
-  watchedDateSpanYears: merged.anomaly.watchedDateSpanYears,
-  longestStreakDays: longestStreak(merged.films.filter((f) => f.watched).flatMap((f) => f.watchedDates)),
-  samples: merged.debug.randomFilmSamples
+  recognizedFiles: merged.summary.recognizedFiles,
+  tableRowCounts: merged.summary.tableRowCounts,
+  tableUniqueFilmCounts: merged.summary.tableUniqueFilmCounts,
+  coverageSummary: merged.summary.coverageSummary,
+  dateQualitySummary: merged.summary.dateQualitySummary,
+  ratingSourceSummary: merged.summary.ratingSourceSummary,
+  importSpikeSummary: merged.summary.importSpikeSummary,
+  listSummary: merged.summary.listSummary,
+  archiveSummary: merged.summary.archiveSummary,
+  sampleFilms: merged.summary.samples,
+  overview: stats.overview,
+  quickFacts: stats.quickFacts,
+  shareText: stats.shareText,
 }, null, 2));
 
-assertThat(tables.reviews.length > 0, 'reviews.csv should be loaded');
-assertThat(tables.comments.length === 0, 'comments.csv exists but must not be treated as reviews');
-assertThat(merged.debug.diaryRowsMatchedToWatchedCount > 0, 'diary rows should match watched baseline by Name+Year');
-assertThat(merged.debug.reviewsRowsMatchedToWatchedCount > 0, 'reviews rows should match watched baseline by Name+Year');
-assertThat(merged.films.every((f) => f.reviewTextSamples.length === 0 || f.sources.includes('reviews')), 'reviews must come from reviews.csv');
-assertThat(merged.films.every((f) => f.rating === null || f.sources.includes('ratings')), 'ratings must come from ratings.csv');
-assertThat(merged.films.every((f) => f.watchedDates.length === 0 || f.sources.includes('diary')), 'time series must use diary watched_at/logged_at only');
-assertThat(longestStreak(merged.films.filter((f) => f.watched).flatMap((f) => f.watchedDates)) > 0, 'longest streak should be > 0 with sample diary watched dates');
+assertThat(merged.summary.recognizedFiles.includes("deleted/diary.csv"), "deleted/diary.csv should be recognized");
+assertThat(merged.summary.recognizedFiles.includes("likes/reviews.csv"), "likes/reviews.csv should be recognized");
+assertThat(merged.summary.listSummary.activeListCount > 0, "lists/*.csv should be parsed");
+assertThat(merged.summary.archiveSummary.deleted.diaryRows > 0, "deleted rows should be summarized");
+assertThat(merged.summary.archiveSummary.likes.reviewRows > 0, "likes rows should be summarized");
+assertThat(merged.summary.dateQualitySummary.exactWatchEvents > 0, "sample should have exact watch events");
+assertThat(merged.summary.dateQualitySummary.estimatedFallbackRows > 0, "sample should expose estimated fallback rows");
+assertThat(merged.summary.ratingSourceSummary.filmsWithCurrentRating > 0, "sample should have current ratings");
+assertThat(merged.summary.ratingSourceSummary.filmsWithLoggedRating > 0, "sample should have logged ratings");
+assertThat(stats.overview.watchedFilmsUnique.value === merged.summary.coverageSummary.watchedUniverseFilmCount, "overview watched films should match dataset summary");
+assertThat(stats.overview.currentRatedFilms.value === merged.summary.ratingSourceSummary.filmsWithCurrentRating, "overview current rated should match dataset summary");
+assertThat(stats.quickFacts.loggedRatedFilms.value === merged.summary.ratingSourceSummary.filmsWithLoggedRating, "quick facts logged-rated should match dataset summary");
+assertThat(stats.quickFacts.reviewRows.value === merged.summary.tableRowCounts["reviews.csv"], "quick facts review rows should match dataset summary");
+assertThat(stats.quickFacts.watchlistFilms.value === merged.summary.coverageSummary.watchlistFilmCount, "quick facts watchlist films should match dataset summary");
+assertThat(stats.overview.watchEntries.value === stats.overview.watchEntries.exactEntries + stats.overview.watchEntries.estimatedEntries, "watch entry totals should split into exact + estimated");
+assertThat(stats.overview.watchEntries.exactEntries === merged.summary.dateQualitySummary.exactWatchEvents, "exact watch entry count should match dataset summary");
+assertThat(stats.overview.watchEntries.estimatedEntries === merged.summary.dateQualitySummary.estimatedFallbackRows, "estimated watch entry count should match dataset summary");
+assertThat(merged.films.some((film) => film.filmUri && film.reviewEntryUris.length > 0 && !film.reviewEntryUris.includes(film.filmUri)), "film URI and review entry URI layers should remain separate");
 
-console.log('All sample assertions passed.');
+console.log("Sample verification passed.");

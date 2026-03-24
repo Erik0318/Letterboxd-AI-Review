@@ -26,8 +26,8 @@ export default function ShareCard({
   label: string;
   labels: ShareCardLabels;
 }) {
-  const mean = stats.ratings.mean === null ? labels.na : round3(stats.ratings.mean);
-  const med = stats.ratings.median === null ? labels.na : round1(stats.ratings.median);
+  const mean = stats.shareCard.currentMeanRating === null ? labels.na : round3(stats.shareCard.currentMeanRating);
+  const med = stats.shareCard.currentMedianRating === null ? labels.na : round1(stats.shareCard.currentMedianRating);
 
   return (
     <div className="shareCard" id="shareCard">
@@ -42,11 +42,11 @@ export default function ShareCard({
       <div className="shareGrid">
         <div className="shareTile">
           <div className="t">{labels.watched}</div>
-          <div className="v">{formatInt(stats.totals.filmsWatched)}</div>
+          <div className="v">{formatInt(stats.shareCard.watchedFilmsUnique)}</div>
         </div>
         <div className="shareTile">
           <div className="t">{labels.rated}</div>
-          <div className="v">{formatInt(stats.totals.filmsRated)}</div>
+          <div className="v">{formatInt(stats.shareCard.currentRatedFilms)}</div>
         </div>
         <div className="shareTile">
           <div className="t">{labels.meanRating}</div>
@@ -58,22 +58,22 @@ export default function ShareCard({
         </div>
         <div className="shareTile">
           <div className="t">{labels.longestStreak}</div>
-          <div className="v">{formatInt(stats.activity.longestStreakDays)}</div>
+          <div className="v">{formatInt(stats.shareCard.bestStreakDays)}</div>
         </div>
         <div className="shareTile">
           <div className="t">{labels.commitment}</div>
-          <div className="v">{formatPct(stats.fun.commitmentIndex)}</div>
+          <div className="v">{formatPct(stats.shareCard.commitmentIndex)}</div>
         </div>
         <div className="shareTile" style={{ gridColumn: "span 6" }}>
           <div className="t">{labels.topWords}</div>
           <div className="v" style={{ fontSize: 14, lineHeight: 1.35, marginTop: 8 }}>
-            {stats.text.topWords.slice(0, 10).map(w => w.word).join(", ") || labels.na}
+            {stats.shareCard.topWords.join(", ") || labels.na}
           </div>
         </div>
         <div className="shareTile" style={{ gridColumn: "span 6" }}>
           <div className="t">{labels.oneLine}</div>
           <div className="v" style={{ fontSize: 14, lineHeight: 1.35, marginTop: 8 }}>
-            {stats.shareText.short}
+            {stats.shareCard.oneLine}
           </div>
         </div>
       </div>
