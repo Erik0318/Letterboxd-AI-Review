@@ -175,14 +175,15 @@ export type DatasetSummary = {
     watchlistOnly: number;
   };
   dateQualitySummary: {
-    filmsWithExactDate: number;
-    filmsWithEstimatedOnly: number;
-    filmsWithNoWatchedDate: number;
+    exactDatedWatchedFilms: number;
+    watchedFilmsWithoutExactDate: number;
+    watchedFilmsWithEstimatedDateOnly: number;
+    watchedFilmsWithNoDate: number;
     exactWatchEvents: number;
-    loggedEntriesWithoutExactDate: number;
-    estimatedWatchRows: number;
-    estimatedFallbackRows: number;
-    exactCoverage: number;
+    loggedWatchEventsWithoutExactDate: number;
+    watchedRowsWithImportDate: number;
+    watchedRowsWithoutExactDate: number;
+    exactDatedWatchedFilmCoverage: number;
   };
   ratingSourceSummary: {
     filmsWithCurrentRating: number;
@@ -259,7 +260,7 @@ export type MergeAnomaly = {
   largestSingleDayImportCount: number;
   largestSingleDayImportDate: string | null;
   exactWatchedCoverage: number;
-  estimatedOnlyFilms: number;
+  watchedFilmsWithoutExactDate: number;
   currentOnlyRatingFilms: number;
   loggedOnlyRatingFilms: number;
 };
@@ -1232,19 +1233,21 @@ export function mergeTablesToFilms(tables: ExportTables): MergeResult {
   const fileSummaries = collectTableSummaries(tables);
   const watchedUniverseFilms = films.filter(isWatchedFilmRecord);
   const filmsWithExactDate = watchedUniverseFilms.filter((film) => film.exactWatchedDate !== null).length;
-  const filmsWithEstimatedOnly = watchedUniverseFilms.filter(
+  const watchedFilmsWithEstimatedDateOnly = watchedUniverseFilms.filter(
     (film) => film.exactWatchedDate === null && film.estimatedWatchedDate !== null,
   ).length;
+  const watchedFilmsWithNoDate = watchedUniverseFilms.length - filmsWithExactDate - watchedFilmsWithEstimatedDateOnly;
+  const watchedFilmsWithoutExactDate = watchedUniverseFilms.length - filmsWithExactDate;
   const exactWatchEvents = films.reduce(
     (count, film) => count + film.watchEvents.filter((event) => event.exactWatchedDate !== null).length,
     0,
   );
-  const loggedEntriesWithoutExactDate = films.reduce(
+  const loggedWatchEventsWithoutExactDate = films.reduce(
     (count, film) => count + film.watchEvents.filter((event) => event.exactWatchedDate === null).length,
     0,
   );
-  const estimatedWatchRows = films.reduce((count, film) => count + film.watchedImportDates.length, 0);
-  const estimatedFallbackRows = films.reduce((count, film) => count + getBestTimelineDates(film).estimated.length, 0);
+  const watchedRowsWithImportDate = films.reduce((count, film) => count + film.watchedImportDates.length, 0);
+  const watchedRowsWithoutExactDate = films.reduce((count, film) => count + getBestTimelineDates(film).estimated.length, 0);
 
   const importDayCounts = new Map<string, number>();
   for (const row of tables.watched) {
@@ -1300,14 +1303,15 @@ export function mergeTablesToFilms(tables: ExportTables): MergeResult {
       watchlistOnly: films.filter((film) => film.inWatchlist && !isWatchedFilmRecord(film)).length,
     },
     dateQualitySummary: {
-      filmsWithExactDate,
-      filmsWithEstimatedOnly,
-      filmsWithNoWatchedDate: watchedUniverseFilms.length - filmsWithExactDate - filmsWithEstimatedOnly,
+      exactDatedWatchedFilms: filmsWithExactDate,
+      watchedFilmsWithoutExactDate,
+      watchedFilmsWithEstimatedDateOnly,
+      watchedFilmsWithNoDate,
       exactWatchEvents,
-      loggedEntriesWithoutExactDate,
-      estimatedWatchRows,
-      estimatedFallbackRows,
-      exactCoverage: watchedUniverseFilms.length ? filmsWithExactDate / watchedUniverseFilms.length : 0,
+      loggedWatchEventsWithoutExactDate,
+      watchedRowsWithImportDate,
+      watchedRowsWithoutExactDate,
+      exactDatedWatchedFilmCoverage: watchedUniverseFilms.length ? filmsWithExactDate / watchedUniverseFilms.length : 0,
     },
     ratingSourceSummary: {
       filmsWithCurrentRating: films.filter((film) => film.currentRating !== null).length,
@@ -1374,8 +1378,8 @@ export function mergeTablesToFilms(tables: ExportTables): MergeResult {
       importSpikeDetected,
       largestSingleDayImportCount,
       largestSingleDayImportDate,
-      exactWatchedCoverage: summary.dateQualitySummary.exactCoverage,
-      estimatedOnlyFilms: summary.dateQualitySummary.filmsWithEstimatedOnly,
+      exactWatchedCoverage: summary.dateQualitySummary.exactDatedWatchedFilmCoverage,
+      watchedFilmsWithoutExactDate: summary.dateQualitySummary.watchedFilmsWithoutExactDate,
       currentOnlyRatingFilms: summary.ratingSourceSummary.currentOnly,
       loggedOnlyRatingFilms: summary.ratingSourceSummary.loggedOnly,
     },

@@ -5,12 +5,14 @@ export function Heatmap({
   byMonth,
   title = "Activity heatmap",
   emptyText = "No dates found in the export.",
-  footerText = "Shows the last 6 years found in your dates."
+  footerText = "Shows the last 6 years found in your dates.",
+  subtitle,
 }: {
   byMonth: Array<{ month: string; count: number }>;
   title?: string;
   emptyText?: string;
   footerText?: string;
+  subtitle?: string;
 }) {
   const map = new Map(byMonth.map(m => [m.month, m.count]));
   const months = Array.from(map.keys()).sort();
@@ -26,6 +28,7 @@ export function Heatmap({
   return (
     <div className="card">
       <h2>{title}</h2>
+      {subtitle && <div className="small">{subtitle}</div>}
       {years.length === 0 ? (
         <p>{emptyText}</p>
       ) : (

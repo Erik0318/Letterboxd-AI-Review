@@ -62,14 +62,70 @@ input:focus, select:focus, textarea:focus { border-color: rgba(85,214,190,0.5); 
 .kpi .value { font-size: 22px; }
 .hr { height: 1px; background: var(--line); margin: 12px 0; }
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(15,21,33,0.55); color: var(--muted); font-size: 12px; }
+.badgeButton {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(15,21,33,0.55); color: var(--muted); font-size: 12px;
+}
+.badgeButton.isInteractive { cursor: pointer; }
+.badgeButton:disabled { opacity: 1; cursor: default; }
 .small { font-size: 12px; color: var(--muted); }
 .drop { border: 1px dashed rgba(230,237,243,0.24); background: rgba(18,24,38,0.35); border-radius: 14px; padding: 14px; }
 
 .barRow { display: grid; grid-template-columns: 70px 1fr 50px; gap: 10px; align-items: center; padding: 6px 0; }
+.barRowButton {
+  width: 100%; border: 0; background: transparent; color: inherit; padding: 6px 0; margin: 0;
+  display: grid; grid-template-columns: 70px 1fr 50px; gap: 10px; align-items: center; text-align: left;
+}
+.barRowButton.isInteractive { cursor: pointer; }
 .bar { height: 10px; border-radius: 999px; background: rgba(230,237,243,0.10); overflow: hidden; }
 .bar > div { height: 100%; background: linear-gradient(90deg, #3ab7a1, #7ef1dc); width: 0%; transition: width .4s ease; }
 .heat { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
 .heat .cell { height: 18px; border-radius: 5px; border: 1px solid rgba(230,237,243,0.08); }
+
+.driftTableWrap { overflow-x: auto; margin-top: 10px; }
+.driftTable { min-width: 620px; display: flex; flex-direction: column; gap: 8px; }
+.driftHead,
+.driftRow { display: grid; grid-template-columns: minmax(180px, 1.8fr) 70px 110px 110px 80px; gap: 10px; align-items: center; }
+.driftHead { color: var(--muted); font-size: 12px; padding: 0 10px; }
+.driftRow {
+  border: 1px solid var(--line);
+  background: rgba(15,21,33,0.55);
+  border-radius: 12px;
+  padding: 10px;
+}
+.driftFilm { min-width: 0; }
+.driftFilmTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.driftDelta { font-weight: 600; }
+.driftUp { color: var(--accent); }
+.driftDown { color: var(--bad); }
+.driftFlat { color: var(--muted); }
+.moduleSplit { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.scopeGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+.scopeGrid label { display: grid; gap: 6px; }
+.dataTableWrap { overflow-x: auto; margin-top: 8px; }
+.dataTable { min-width: 520px; display: flex; flex-direction: column; gap: 8px; }
+.dataTableHead,
+.dataTableRow { display: grid; gap: 10px; align-items: center; }
+.dataTableHead { color: var(--muted); font-size: 12px; padding: 0 10px; }
+.dataTableRow {
+  border: 1px solid var(--line);
+  background: rgba(15,21,33,0.55);
+  border-radius: 12px;
+  padding: 10px;
+}
+.dataTableBacklog { grid-template-columns: minmax(90px, 1fr) 110px 110px 110px; }
+.dataTableReviews { grid-template-columns: minmax(180px, 1.6fr) 70px 90px; }
+.dataTableRelease { grid-template-columns: minmax(80px, 1fr) 100px 120px 90px 120px 90px; }
+.dataTableArchive { grid-template-columns: minmax(90px, 1fr) 90px 90px 100px 80px 90px; }
+.dataTableLists { grid-template-columns: minmax(160px, 1.4fr) 120px 70px minmax(220px, 2fr); }
+.dataTableAuditCore { grid-template-columns: minmax(130px, 1.4fr) 80px 80px; }
+.dataTableAuditOptional { grid-template-columns: minmax(100px, 1fr) 80px minmax(180px, 2fr); }
+.dataTableAuditCoverage { grid-template-columns: minmax(150px, 1.2fr) 140px minmax(220px, 2fr); }
+.dataEllipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dataTableRowButton {
+  width: 100%; border: 1px solid var(--line); cursor: pointer; color: inherit; text-align: left;
+}
+.dataTableRowButton:disabled { cursor: default; }
 
 .shareCard {
   width: 900px; max-width: 100%; border-radius: 18px; border: 1px solid rgba(230,237,243,0.18);
@@ -80,6 +136,20 @@ input:focus, select:focus, textarea:focus { border-color: rgba(85,214,190,0.5); 
 .shareTile { grid-column: span 3; border: 1px solid rgba(230,237,243,0.14); background: rgba(15,21,33,0.65); border-radius: 14px; padding: 12px; }
 .shareTile .t { color: var(--muted); font-size: 12px; }
 .shareTile .v { font-size: 20px; margin-top: 6px; }
+
+.explorerOverlay {
+  position: fixed; inset: 0; background: rgba(4, 7, 12, 0.78); display: grid; place-items: center; padding: 20px; z-index: 120;
+}
+.explorerPanel {
+  width: min(1180px, 100%); max-height: calc(100vh - 40px); overflow: auto;
+  border: 1px solid var(--line); background: rgba(11,15,20,0.96); border-radius: 18px; padding: 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+.explorerToolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
+.explorerToolbar label { display: grid; gap: 6px; }
+.explorerTable { min-width: 900px; }
+.explorerFilms { grid-template-columns: minmax(180px, 1.8fr) 70px 110px 110px 80px 120px 90px 100px 90px; }
+.explorerReviews { grid-template-columns: minmax(180px, 1.8fr) 70px 110px 110px 80px 120px 100px 90px; }
 
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: rgba(15,21,33,0.95); border: 1px solid rgba(230,237,243,0.16); padding: 10px 12px; border-radius: 12px; color: var(--text); font-size: 13px; z-index: 1000; max-width: calc(100% - 24px); }
 
