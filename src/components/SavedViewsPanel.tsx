@@ -38,7 +38,7 @@ export default function SavedViewsPanel({
         <div>
           <h2>Saved views</h2>
           <div className="small">
-            Presets and saved views remember your active scope, optional drilldown route, and current sort state so you can return to useful subsets quickly.
+            Keep a filter set or detail view around and come back to it later.
           </div>
         </div>
         <div className="savedViewSave">
@@ -47,13 +47,13 @@ export default function SavedViewsPanel({
             onChange={(event) => onDraftNameChange(event.target.value)}
             placeholder="Name this view"
           />
-          <button className="btn primary" type="button" onClick={onSaveCurrent}>Save current view</button>
+          <button className="btn primary" type="button" onClick={onSaveCurrent}>Save view</button>
         </div>
       </div>
 
       <div className="savedViewsColumns">
         <div>
-          <div className="small" style={{ marginBottom: 8 }}>Built-in presets</div>
+          <div className="small" style={{ marginBottom: 8 }}>Built-ins</div>
           <div className="savedViewList">
             {presets.map((view) => (
               <div className={`savedViewItem isPreset${activeViewId === view.id ? " isActive" : ""}`} key={view.id}>
@@ -66,8 +66,8 @@ export default function SavedViewsPanel({
                   <div className="small">{view.description}</div>
                 </div>
                 <div className="row">
-                  <button className="btn primary" type="button" onClick={() => onLoad(view)}>Load</button>
-                  <button className="btn" type="button" onClick={() => onExportSummary(view)}>Export summary</button>
+                  <button className="btn primary" type="button" onClick={() => onLoad(view)}>Open</button>
+                  <button className="btn" type="button" onClick={() => onExportSummary(view)}>Export note</button>
                 </div>
               </div>
             ))}
@@ -77,7 +77,7 @@ export default function SavedViewsPanel({
         <div>
           <div className="small" style={{ marginBottom: 8 }}>Your saved views</div>
           {savedViews.length === 0 ? (
-            <p>No saved views yet. Save a scope or drilldown you expect to reuse.</p>
+            <p>No saved views yet.</p>
           ) : (
             <div className="savedViewList">
               {savedViews.map((view) => (
@@ -91,8 +91,8 @@ export default function SavedViewsPanel({
                     <div className="small">{viewTimestamp(view)}</div>
                   </div>
                   <div className="row">
-                    <button className="btn primary" type="button" onClick={() => onLoad(view)}>Load</button>
-                    <button className="btn" type="button" onClick={() => onExportSummary(view)}>Export summary</button>
+                    <button className="btn primary" type="button" onClick={() => onLoad(view)}>Open</button>
+                    <button className="btn" type="button" onClick={() => onExportSummary(view)}>Export note</button>
                     <button className="btn" type="button" onClick={() => onRename(view)}>Rename</button>
                     <button className="btn danger" type="button" onClick={() => onDelete(view)}>Delete</button>
                   </div>

@@ -68,22 +68,22 @@ export default function ScopeBar({
     <div className={`card${className ? ` ${className}` : ""}`}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h2>Analysis scope</h2>
+          <h2>Filters</h2>
           <div className="small">
-            Filter the current export into a reusable scoped view. Scope-aware modules update together and stay film-level unless a panel explicitly says rows.
+            Trim the report without changing the export underneath it.
           </div>
         </div>
         <div className="row">
-          <button className="btn primary" type="button" onClick={onOpenExplorer}>Open scoped explorer</button>
-          <button className="btn" type="button" onClick={onExport}>Export scoped films CSV</button>
-          <button className="btn" type="button" onClick={onCopySummary}>Copy current view summary</button>
-          <button className="btn danger" type="button" onClick={onReset}>Reset scope</button>
+          <button className="btn primary" type="button" onClick={onOpenExplorer}>Open films</button>
+          <button className="btn" type="button" onClick={onExport}>Export films CSV</button>
+          <button className="btn" type="button" onClick={onCopySummary}>Copy view note</button>
+          <button className="btn danger" type="button" onClick={onReset}>Clear filters</button>
         </div>
       </div>
 
       <div className="scopeGrid">
         <label>
-          <div className="small">Universe / basis</div>
+          <div className="small">Base</div>
           <select value={scope.basis} onChange={(event) => update({ basis: event.target.value as AnalysisScope["basis"] })}>
             {BASIS_OPTIONS.map((basis) => (
               <option value={basis} key={basis}>{ANALYSIS_SCOPE_BASIS_LABELS[basis]}</option>
@@ -92,7 +92,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Release decade</div>
+          <div className="small">Decade</div>
           <select value={scope.releaseDecade || ""} onChange={(event) => update({ releaseDecade: event.target.value || null })}>
             <option value="">Any</option>
             {availableDecades.map((decade) => (
@@ -102,7 +102,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Release year min</div>
+          <div className="small">Year from</div>
           <input
             value={scope.releaseYearMin ?? ""}
             placeholder={yearSpan.min === null ? "n/a" : String(yearSpan.min)}
@@ -111,7 +111,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Release year max</div>
+          <div className="small">Year to</div>
           <input
             value={scope.releaseYearMax ?? ""}
             placeholder={yearSpan.max === null ? "n/a" : String(yearSpan.max)}
@@ -120,7 +120,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Current rating min</div>
+          <div className="small">Current from</div>
           <select value={scope.currentRatingMin ?? ""} onChange={(event) => update({ currentRatingMin: parseNullableNumber(event.target.value) })}>
             <option value="">Any</option>
             {ratingOptions.map((rating) => (
@@ -130,7 +130,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Current rating max</div>
+          <div className="small">Current to</div>
           <select value={scope.currentRatingMax ?? ""} onChange={(event) => update({ currentRatingMax: parseNullableNumber(event.target.value) })}>
             <option value="">Any</option>
             {ratingOptions.map((rating) => (
@@ -140,7 +140,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Logged rating min</div>
+          <div className="small">Logged from</div>
           <select value={scope.loggedRatingMin ?? ""} onChange={(event) => update({ loggedRatingMin: parseNullableNumber(event.target.value) })}>
             <option value="">Any</option>
             {ratingOptions.map((rating) => (
@@ -150,7 +150,7 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Logged rating max</div>
+          <div className="small">Logged to</div>
           <select value={scope.loggedRatingMax ?? ""} onChange={(event) => update({ loggedRatingMax: parseNullableNumber(event.target.value) })}>
             <option value="">Any</option>
             {ratingOptions.map((rating) => (
@@ -160,18 +160,18 @@ export default function ScopeBar({
         </label>
 
         <label>
-          <div className="small">Review presence</div>
+          <div className="small">Reviews</div>
           <select value={scope.reviewPresence} onChange={(event) => update({ reviewPresence: event.target.value as AnalysisScope["reviewPresence"] })}>
             <option value="all">All</option>
-            <option value="hasReview">Has review</option>
+            <option value="hasReview">With review</option>
             <option value="noReview">No review</option>
           </select>
         </label>
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
-        <span className="badge">{isActive ? "Scoped view" : "Global default view"}</span>
-        <span className="badge">Basis films: {formatInt(basisFilms)}</span>
+        <span className="badge">{isActive ? "Filtered view" : "Full report"}</span>
+        <span className="badge">Base films: {formatInt(basisFilms)}</span>
         <span className="badge">Matching films: {formatInt(matchingFilms)}</span>
         <span className="badge">Active filters: {formatInt(chips.length)}</span>
       </div>

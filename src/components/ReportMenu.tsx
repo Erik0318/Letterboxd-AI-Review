@@ -25,8 +25,9 @@ export default function ReportMenu({
   if (sticky) {
     return (
       <div className={`reportMenuDock${visible ? " isVisible" : ""}`} aria-hidden={!visible}>
+        <div className="reportMenuProgress" aria-hidden="true"><span /></div>
         <div className="reportMenuDockMeta">
-          <div className="small">Report navigator</div>
+          <div className="small">Now reading</div>
           <div className="reportMenuDockTitle">{entries.find((entry) => entry.id === activeSectionId)?.title || "Report"}</div>
         </div>
         <div className="reportMenuPills" role="navigation" aria-label="Report section navigator">
@@ -49,18 +50,19 @@ export default function ReportMenu({
 
   return (
     <div className="card reportMenuShell" id="report-menu">
+      <div className="reportMenuProgress" aria-hidden="true"><span /></div>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div className="sectionEyebrow">Report Map</div>
-          <h2 style={{ marginTop: 4 }}>Explore by section, not by endless scroll</h2>
+          <h2 style={{ marginTop: 4 }}>Find your way</h2>
           <div className="small">
-            Each card tells you what the section is for and previews the current report state, so you can jump straight to the part you care about.
+            Jump to a section, keep the rest for later, and let the report unfold as you move.
           </div>
         </div>
         <div className="reportMenuMeta">
-          <span className="badge">Active section: {entries.find((entry) => entry.id === activeSectionId)?.title || "Overview"}</span>
-          <span className="badge">Scope: {activeScopeSummary}</span>
-          {activeViewName && <span className="badge">Saved view: {activeViewName}</span>}
+          <span className="badge">Now: {entries.find((entry) => entry.id === activeSectionId)?.title || "Overview"}</span>
+          <span className="badge">View: {activeScopeSummary}</span>
+          {activeViewName && <span className="badge">Saved: {activeViewName}</span>}
         </div>
       </div>
 
@@ -88,12 +90,12 @@ export default function ReportMenu({
                 </div>
               )) : (
                 <div className="reportMenuMetric">
-                  <div className="small">Preview</div>
+                  <div className="small">Ready</div>
                   <div>Open section</div>
                 </div>
               )}
             </div>
-            <div className="reportMenuHint">Jump to {entry.shortTitle}</div>
+            <div className="reportMenuHint">Jump to {entry.shortTitle.toLowerCase()}</div>
           </button>
         ))}
       </div>

@@ -17,36 +17,36 @@ export default function DataQualityPanel({
 }) {
   return (
     <div className="card">
-      <h2>Data quality / export audit</h2>
+      <h2>Data quality</h2>
       <div className="small">
-        {subtitle || "A factual audit of which parts of the export can support timelines, drift comparisons, review summaries, and optional archive modules."}
+        {subtitle || "What the export can support, and what it cannot."}
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
         <span className="badge">
-          Exact-dated watched films: {formatInt(dataQuality.summary.exactDatedWatchedFilms.value)}
+          Exact watch dates: {formatInt(dataQuality.summary.exactDatedWatchedFilms.value)}
           <HelpTooltip
-            label="Explain exact-dated watched films"
+            label="Exact watch dates note"
             text="Watched-universe films with at least one exact diary/review watched date. These are the films that can safely enter default watched-time charts."
           />
         </span>
         <span className="badge">
-          Watched films without exact date: {formatInt(dataQuality.summary.watchedFilmsWithoutExactDate.value)}
+          Missing exact watch dates: {formatInt(dataQuality.summary.watchedFilmsWithoutExactDate.value)}
           <HelpTooltip
-            label="Explain watched films without exact date"
+            label="Missing exact watch dates note"
             text="These still count as watched films, but they stay out of the default watch timeline, heatmap, streak, and watched-time charts."
           />
         </span>
         <span className="badge">
-          Comparable drift films: {formatInt(dataQuality.summary.comparableDriftFilms.value)}
+          Comparable ratings: {formatInt(dataQuality.summary.comparableDriftFilms.value)}
           <HelpTooltip
-            label="Explain comparable drift films"
+            label="Comparable ratings note"
             text="Films that have both currentRating and loggedRating, so they can participate in rating drift comparisons."
           />
         </span>
-        <span className="badge">Changed rating films: {formatInt(dataQuality.summary.changedRatingFilms.value)}</span>
-        <span className="badge">Current-only ratings: {formatInt(dataQuality.summary.currentOnlyRatedFilms.value)}</span>
-        <span className="badge">Logged-only ratings: {formatInt(dataQuality.summary.loggedOnlyRatedFilms.value)}</span>
+        <span className="badge">Changed ratings: {formatInt(dataQuality.summary.changedRatingFilms.value)}</span>
+        <span className="badge">Current-only: {formatInt(dataQuality.summary.currentOnlyRatedFilms.value)}</span>
+        <span className="badge">Logged-only: {formatInt(dataQuality.summary.loggedOnlyRatedFilms.value)}</span>
       </div>
 
       <div className="qualitySectionGrid">
@@ -61,18 +61,18 @@ export default function DataQualityPanel({
                     <div className="qualityIssueTitle">{item.label}</div>
                     <span className="badge">{item.valueLabel}</span>
                   </div>
-                  <div className="small" style={{ marginTop: 6 }}>Basis: {item.basis}</div>
-                  <div className="small" style={{ marginTop: 4 }}>What this affects: {item.whatThisAffects}</div>
+                  <div className="small" style={{ marginTop: 6 }}>Counted from: {item.basis}</div>
+                  <div className="small" style={{ marginTop: 4 }}>What this changes: {item.whatThisAffects}</div>
                   {item.jumpTarget && item.jumpLabel && (onJumpToSection ? (
                     <button
                       type="button"
                       className="small sectionLink linkButton"
                       onClick={() => onJumpToSection(item.jumpTarget!)}
                     >
-                      Jump to {item.jumpLabel}
+                      Open {item.jumpLabel}
                     </button>
                   ) : (
-                    <a className="small sectionLink" href={`#${item.jumpTarget}`}>Jump to {item.jumpLabel}</a>
+                    <a className="small sectionLink" href={`#${item.jumpTarget}`}>Open {item.jumpLabel}</a>
                   ))}
                 </div>
               ))}
@@ -83,11 +83,11 @@ export default function DataQualityPanel({
 
       <div className="moduleSplit" style={{ marginTop: 14 }}>
         <div>
-          <div className="small" style={{ marginTop: 12 }}>Recognized core tables</div>
+          <div className="small" style={{ marginTop: 12 }}>Core files</div>
           <div className="dataTableWrap">
             <div className="dataTable">
               <div className="dataTableHead dataTableAuditCore">
-                <div>Table</div>
+                <div>File</div>
                 <div>Present</div>
                 <div>Rows</div>
               </div>
@@ -103,11 +103,11 @@ export default function DataQualityPanel({
         </div>
 
         <div>
-          <div className="small" style={{ marginTop: 12 }}>Module coverage</div>
+          <div className="small" style={{ marginTop: 12 }}>Coverage by section</div>
           <div className="dataTableWrap">
             <div className="dataTable">
               <div className="dataTableHead dataTableAuditCoverage">
-                <div>Module</div>
+                <div>Section</div>
                 <div>Coverage</div>
                 <div>Why it matters</div>
               </div>

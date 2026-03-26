@@ -1,5 +1,4 @@
 ﻿import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import html2canvas from "html2canvas";
 import ArchiveListsPanel from "./components/ArchiveListsPanel";
 import BacklogPanel from "./components/BacklogPanel";
 import { BarList } from "./components/BarList";
@@ -27,11 +26,13 @@ import {
   FilmExplorerPayload,
 } from "./lib/explorer";
 import {
+  createFilmKey,
   DatasetSummary,
   FilmRecord,
   getBestTimelineDates,
   isWatchedFilm,
   mergeTablesToFilms,
+  ParsedListFile,
   readLetterboxdExportZip,
 } from "./lib/letterboxd";
 import {
@@ -71,7 +72,7 @@ import {
   RatingDriftSortKey,
   StatPack,
 } from "./lib/stats";
-import { formatInt, formatPct, round1, round3 } from "./lib/utils";
+import { clamp, formatInt, formatPct, round1, round3 } from "./lib/utils";
 import { buildCurrentViewSummary } from "./lib/viewState";
 import {
   buildExactWatchActivity,
@@ -87,6 +88,13 @@ type Lang = "en" | "zh" | "uk";
 type HelpState = "expanded" | "collapsed" | "dismissed";
 type ViewOption = SavedViewPreset | SavedViewRecord;
 type UiCue = "scope" | "saved-view" | "share";
+type ExplorerOrigin = {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  token: number;
+};
 
 const HELP_STATE_STORAGE_KEY = "letterboxd-ai-review.help.v1";
 const REPORT_COLLAPSE_STORAGE_KEY = "letterboxd-ai-review.report-collapse.v1";
@@ -296,6 +304,7 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [films, setFilms] = useState<FilmRecord[] | null>(null);
   const [datasetSummary, setDatasetSummary] = useState<DatasetSummary | null>(null);
+  const [parsedLists, setParsedLists] = useState<ParsedListFile[]>([]);
   const [showDebug, setShowDebug] = useState(() => parseShowDebugFromQuery());
   const [scope, setScope] = useState<AnalysisScope>(() => parseScopeFromQuery());
   const [label, setLabel] = useState("");
@@ -324,10 +333,18 @@ export default function App() {
   const [reportMenuInView, setReportMenuInView] = useState(true);
   const [revealedSectionIds, setRevealedSectionIds] = useState<ReportSectionId[]>([]);
   const [uiCue, setUiCue] = useState<UiCue | null>(null);
+  const [attentiveSectionId, setAttentiveSectionId] = useState<ReportSectionId | null>(null);
+  const [enteredSectionId, setEnteredSectionId] = useState<ReportSectionId | null>(null);
+  const [guidedSectionId, setGuidedSectionId] = useState<ReportSectionId | null>(null);
+  const [explorerOrigin, setExplorerOrigin] = useState<ExplorerOrigin | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Partial<Record<ReportSectionId, HTMLElement | null>>>({});
   const activeScrollFrame = useRef<number | null>(null);
   const uiCueTimerRef = useRef<number | null>(null);
+  const hoverDwellTimerRef = useRef<number | null>(null);
+  const sectionCueTimerRef = useRef<number | null>(null);
+  const sectionEntryTimerRef = useRef<number | null>(null);
 
   const stats = useMemo(
     () => (films && datasetSummary ? computeStats(films, datasetSummary, label) : null),
@@ -369,7 +386,7 @@ export default function App() {
   const currentShareText = scopeIsActive && scopedView ? scopedView.shareText : stats?.shareText;
   const currentShareCard = scopeIsActive && scopedView ? scopedView.shareCard : stats?.shareCard;
   const currentShareGeneratedAt = scopeIsActive && scopedView ? scopedView.generatedAt : stats?.generatedAt;
-  const currentShareBadge = scopeIsActive ? "Scoped view" : (stats?.fun.badge || "Global view");
+  const currentShareBadge = scopeIsActive ? "Filtered view" : (stats?.fun.badge || "Full report");
 
   const watchActivitySourceFilms = useMemo(
     () => (scopeSelection ? scopeSelection.films : (films || [])),
@@ -383,6 +400,19 @@ export default function App() {
     () => (films && datasetSummary ? buildGroupedDataQuality(films, datasetSummary) : []),
     [datasetSummary, films],
   );
+  const archiveListFiles = useMemo(
+    () => [...parsedLists]
+      .filter((list) => list.scope !== "deleted")
+      .sort((left, right) =>
+        left.scope.localeCompare(right.scope)
+        || (left.metadata.title || "").localeCompare(right.metadata.title || "")
+        || left.path.localeCompare(right.path)),
+    [parsedLists],
+  );
+  const filmMapByKey = useMemo(
+    () => new Map((films || []).map((film) => [film.filmKey, film])),
+    [films],
+  );
 
   const allViews = useMemo<ViewOption[]>(
     () => [...BUILTIN_SAVED_VIEW_PRESETS, ...savedViews],
@@ -390,7 +420,7 @@ export default function App() {
   );
   const activeView = allViews.find((view) => view.id === activeViewId) || null;
   const activeSavedViewName = activeView?.name || null;
-  const currentScopeSummary = scopeIsActive && scopedView ? scopedView.scope.summary : "Global default view";
+  const currentScopeSummary = scopeIsActive && scopedView ? scopedView.scope.summary : "Full report";
 
   const currentViewSnapshot = useMemo<SavedViewSnapshot>(() => ({
     scope: { ...scope },
@@ -422,8 +452,8 @@ export default function App() {
 
   const reportShareContextItems = useMemo(() => {
     const items = [
-      { label: "Report", value: scopeIsActive ? "Scoped view" : "Global report" },
-      { label: "Scope", value: currentScopeSummary },
+      { label: "Report", value: "Current Letterboxd export" },
+      { label: "View", value: currentScopeSummary },
     ];
     if (activeSavedViewName) {
       items.push({ label: "Saved view", value: activeSavedViewName });
@@ -523,17 +553,17 @@ export default function App() {
     return buildReportMenuEntries({
       overview: [
         {
-          label: scopeIsActive ? "Scoped films" : "Watched films",
+          label: scopeIsActive ? "Films in view" : "Watched films",
           value: formatInt(currentMajorCounts?.watchedFilms || 0),
         },
         {
-          label: "Current rated",
+          label: "Current ratings",
           value: formatInt(currentMajorCounts?.currentRatedFilms || 0),
         },
       ],
       "watched-activity": [
         {
-          label: "Exact-dated films",
+          label: "Exact watch dates",
           value: formatInt(currentWatchActivity.exactDatedWatchedFilms),
         },
         {
@@ -547,7 +577,7 @@ export default function App() {
           value: currentMeanValue === null ? "n/a" : String(round3(currentMeanValue)),
         },
         {
-          label: "Changed drift",
+          label: "Changed ratings",
           value: formatInt((currentRatingDrift || stats.ratingDrift).summary.changed.value),
         },
       ],
@@ -563,11 +593,11 @@ export default function App() {
       ],
       release: [
         {
-          label: "Highest decade",
+          label: "Standout decade",
           value: highestCurrentDecade ? highestCurrentDecade.decade : (topWatchedDecade?.label || "n/a"),
         },
         {
-          label: "Top decade count",
+          label: "Count",
           value: highestCurrentDecade
             ? `${formatInt(highestCurrentDecade.ratedFilms)} rated`
             : (topWatchedDecade ? formatInt(topWatchedDecade.value) : "n/a"),
@@ -607,12 +637,12 @@ export default function App() {
       ],
       ai: [
         {
-          label: "Prompt films",
+          label: "Report films",
           value: formatInt(currentMajorCounts?.watchedFilms || 0),
         },
         {
-          label: "Output",
-          value: aiBusy ? "Thinking" : aiText ? "Ready" : "Idle",
+          label: "Draft",
+          value: aiBusy ? "Writing" : aiText ? "Ready" : "Idle",
         },
       ],
     });
@@ -641,14 +671,14 @@ export default function App() {
     if (scopeIsActive && scopedView) {
       return [
         {
-          title: "Scoped films",
+          title: "Films in view",
           value: formatInt(scopedView.overview.scopedFilms.value),
           label: scopedView.scope.summary,
         },
         {
-          title: "Current rated films",
+          title: "Current ratings",
           value: formatInt(scopedView.overview.currentRatedFilms.value),
-          label: "within the active scope",
+          label: "inside this view",
           help: "Unique films in the current view that have a currentRating from ratings.csv.",
         },
         {
@@ -661,7 +691,7 @@ export default function App() {
           value: scopedView.overview.meanDelta.value === null
             ? "n/a"
             : `${scopedView.overview.meanDelta.value > 0 ? "+" : ""}${round3(scopedView.overview.meanDelta.value)}`,
-          label: "currentRating - loggedRating within scoped comparable films",
+          label: "currentRating - loggedRating in comparable films",
         },
       ];
     }
@@ -672,12 +702,12 @@ export default function App() {
       {
         title: "Watched films",
         value: formatInt(stats.overview.watchedFilmsUnique.value),
-        label: "unique film-level watched universe",
+        label: "the film-level watched set",
       },
       {
-        title: "Current rated films",
+        title: "Current ratings",
         value: formatInt(stats.overview.currentRatedFilms.value),
-        label: "unique films with current rating",
+        label: "films with a current rating",
         help: "Unique films that currently have a ratings.csv snapshot. This is film-level, not raw rating rows.",
       },
       {
@@ -699,9 +729,9 @@ export default function App() {
     }
     return [
       { label: "Watched rows", value: formatInt(stats.quickFacts.watchedRows.value) },
-      { label: "Unrated watched films", value: formatInt(stats.quickFacts.unratedWatchedFilmsWithoutCurrentRating.value) },
+      { label: "Missing current ratings", value: formatInt(stats.quickFacts.unratedWatchedFilmsWithoutCurrentRating.value) },
       {
-        label: "Logged-rated films",
+        label: "Logged ratings",
         value: formatInt(stats.quickFacts.loggedRatedFilms.value),
         help: "Unique films that have a loggedRating from diary/review history. This is separate from the current rating snapshot.",
       },
@@ -721,12 +751,12 @@ export default function App() {
     }
     return [
       {
-        label: "Exact-dated watched films",
+        label: "Exact watch dates",
         value: `${formatInt(datasetSummary.dateQualitySummary.exactDatedWatchedFilms)} / ${formatInt(datasetSummary.coverageSummary.watchedUniverseFilmCount)}`,
         help: "Watched-universe films with at least one exact diary/review watched date. These are the films that can safely enter default watched-time charts.",
       },
       {
-        label: "Watched films without exact date",
+        label: "Missing exact watch dates",
         value: formatInt(datasetSummary.dateQualitySummary.watchedFilmsWithoutExactDate),
         help: "These still count as watched films, but stay out of default watch timeline, heatmap, streak, and watched-time charts.",
       },
@@ -772,6 +802,48 @@ export default function App() {
     }, 900);
   }
 
+  function cueSection(sectionId: ReportSectionId | null) {
+    setGuidedSectionId(sectionId);
+    if (sectionCueTimerRef.current !== null) {
+      window.clearTimeout(sectionCueTimerRef.current);
+    }
+    if (!sectionId) {
+      sectionCueTimerRef.current = null;
+      return;
+    }
+    sectionCueTimerRef.current = window.setTimeout(() => {
+      setGuidedSectionId((current) => (current === sectionId ? null : current));
+      sectionCueTimerRef.current = null;
+    }, 1100);
+  }
+
+  function captureExplorerOrigin(sourceElement: HTMLElement | null) {
+    if (!sourceElement || reducedMotion) {
+      setExplorerOrigin(null);
+      return;
+    }
+    const rect = sourceElement.getBoundingClientRect();
+    setExplorerOrigin({
+      centerX: rect.left + rect.width / 2,
+      centerY: rect.top + rect.height / 2,
+      width: Math.max(rect.width, 32),
+      height: Math.max(rect.height, 32),
+      token: Date.now(),
+    });
+  }
+
+  function updateMotionVariables() {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const container = containerRef.current;
+    if (container) {
+      const scrollMax = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+      const pageProgress = clamp(window.scrollY / scrollMax, 0, 1);
+      container.style.setProperty("--page-progress", pageProgress.toFixed(3));
+    }
+  }
+
   function updateSectionHash(sectionId: ReportSectionId, historyMode: "replace" | "push") {
     if (typeof window === "undefined") {
       return;
@@ -788,6 +860,7 @@ export default function App() {
     const target = sectionRefs.current[sectionId];
     setCollapsedSections((current) => ({ ...current, [sectionId]: false }));
     setActiveSectionId(sectionId);
+    cueSection(sectionId);
     updateSectionHash(sectionId, historyMode);
     if (!target) {
       return;
@@ -801,6 +874,24 @@ export default function App() {
 
   function handleSectionRef(sectionId: ReportSectionId, element: HTMLElement | null) {
     sectionRefs.current[sectionId] = element;
+  }
+
+  function handleSectionPointerEnter(sectionId: ReportSectionId) {
+    if (hoverDwellTimerRef.current !== null) {
+      window.clearTimeout(hoverDwellTimerRef.current);
+    }
+    hoverDwellTimerRef.current = window.setTimeout(() => {
+      setAttentiveSectionId(sectionId);
+      hoverDwellTimerRef.current = null;
+    }, 140);
+  }
+
+  function handleSectionPointerLeave(sectionId: ReportSectionId) {
+    if (hoverDwellTimerRef.current !== null) {
+      window.clearTimeout(hoverDwellTimerRef.current);
+      hoverDwellTimerRef.current = null;
+    }
+    setAttentiveSectionId((current) => (current === sectionId ? null : current));
   }
 
   function jumpToReportMenu() {
@@ -864,7 +955,30 @@ export default function App() {
     if (uiCueTimerRef.current !== null) {
       window.clearTimeout(uiCueTimerRef.current);
     }
+    if (hoverDwellTimerRef.current !== null) {
+      window.clearTimeout(hoverDwellTimerRef.current);
+    }
+    if (sectionCueTimerRef.current !== null) {
+      window.clearTimeout(sectionCueTimerRef.current);
+    }
+    if (sectionEntryTimerRef.current !== null) {
+      window.clearTimeout(sectionEntryTimerRef.current);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!stats) {
+      return;
+    }
+    setEnteredSectionId(activeSectionId);
+    if (sectionEntryTimerRef.current !== null) {
+      window.clearTimeout(sectionEntryTimerRef.current);
+    }
+    sectionEntryTimerRef.current = window.setTimeout(() => {
+      setEnteredSectionId((current) => (current === activeSectionId ? null : current));
+      sectionEntryTimerRef.current = null;
+    }, 900);
+  }, [activeSectionId, stats]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -928,6 +1042,7 @@ export default function App() {
         window.cancelAnimationFrame(activeScrollFrame.current);
       }
       activeScrollFrame.current = window.requestAnimationFrame(() => {
+        updateMotionVariables();
         evaluateActiveSection();
         activeScrollFrame.current = null;
       });
@@ -1041,22 +1156,25 @@ export default function App() {
     setAiText("");
     setFilms(null);
     setDatasetSummary(null);
+    setParsedLists([]);
     setExplorer(null);
     setExplorerRoute(null);
     setFileName(sourceName);
     try {
       const tables = await readLetterboxdExportZip(input);
       const merged = mergeTablesToFilms(tables);
+      const nextParsedLists = [...tables.lists, ...tables.deleted.lists, ...tables.orphaned.lists];
       const initialSection = parseInitialSection();
       startTransition(() => {
         setFilms(merged.films);
         setDatasetSummary(merged.summary);
+        setParsedLists(nextParsedLists);
         setActiveSectionId(initialSection);
         setCollapsedSections(parseCollapsedSectionsFromStorage(initialSection));
       });
-      showToast("Import complete.");
+      showToast("Import ready.");
     } catch {
-      showToast("Import failed. Check ZIP format.");
+      showToast("Import failed. Check the ZIP.");
     }
   }
 
@@ -1073,7 +1191,7 @@ export default function App() {
       const buffer = await res.arrayBuffer();
       await importZip(buffer, "sample_data.zip");
     } catch {
-      showToast("Failed to load sample_data.zip");
+      showToast("Couldn't load sample_data.zip");
     }
   }
 
@@ -1083,11 +1201,12 @@ export default function App() {
       showToast("Share card not ready.");
       return;
     }
+    const { default: html2canvas } = await import("html2canvas");
     const canvas = await html2canvas(el as HTMLElement, { backgroundColor: null, scale: 2 });
     const url = canvas.toDataURL("image/png");
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = scopeIsActive ? "letterboxd-scoped-view.png" : "letterboxd-ai-card.png";
+    anchor.download = scopeIsActive ? "letterboxd-filtered-view.png" : "letterboxd-report-card.png";
     anchor.click();
     triggerUiCue("share");
   }
@@ -1139,7 +1258,7 @@ export default function App() {
     emptyBody: string,
   ) {
     return {
-      globalContext: fileName ? `Imported export: ${fileName}` : "Current imported Letterboxd export",
+      globalContext: fileName ? `Imported export: ${fileName}` : "Current Letterboxd export",
       activeScope: currentScopeSummary,
       drilldownSource,
       rowBasis,
@@ -1163,7 +1282,7 @@ export default function App() {
       subtitle,
       source,
       exportFileName,
-      context: explorerContext(source, "Unique films (film-level)", emptyTitle, emptyBody),
+      context: explorerContext(source, "Film-level films", emptyTitle, emptyBody),
       rows,
     };
   }
@@ -1183,7 +1302,7 @@ export default function App() {
       subtitle,
       source,
       exportFileName,
-      context: explorerContext(source, "Review rows (row-level)", emptyTitle, emptyBody),
+      context: explorerContext(source, "Row-level reviews", emptyTitle, emptyBody),
       rows,
     };
   }
@@ -1203,9 +1322,41 @@ export default function App() {
       subtitle,
       source,
       exportFileName,
-      context: explorerContext(source, "Exact watch events (row-level, exact-date only)", emptyTitle, emptyBody),
+      context: explorerContext(source, "Row-level exact watch events", emptyTitle, emptyBody),
       rows,
     };
+  }
+
+  function buildArchiveListExplorerRows(listFile: ParsedListFile) {
+    return listFile.items.map((item, index) => {
+      const derivedFilmKey = item.filmKey || createFilmKey(item.name, item.year);
+      const matchedFilm = derivedFilmKey ? filmMapByKey.get(derivedFilmKey) || null : null;
+      const currentRating = matchedFilm?.currentRating ?? null;
+      const loggedRating = matchedFilm?.loggedRating ?? null;
+      const longestReviewLength = matchedFilm?.reviewTexts.length
+        ? Math.max(...matchedFilm.reviewTexts.map((review) => review.length))
+        : null;
+      const watchlistAddedDate = matchedFilm?.watchlistAddedDates.length
+        ? [...matchedFilm.watchlistAddedDates].sort((left, right) => left.localeCompare(right))[0]
+        : null;
+
+      return {
+        kind: "film" as const,
+        id: `${listFile.path}:${item.position ?? index}:${derivedFilmKey || item.filmUrl || item.name || "item"}`,
+        filmKey: derivedFilmKey || `${listFile.path}::${item.position ?? index}`,
+        title: item.name || `Untitled item ${item.position ?? index + 1}`,
+        year: item.year ?? matchedFilm?.year ?? null,
+        filmUrl: item.filmUrl || matchedFilm?.filmUri || null,
+        currentRating,
+        loggedRating,
+        delta: currentRating !== null && loggedRating !== null ? currentRating - loggedRating : null,
+        exactWatchedDate: matchedFilm?.exactWatchedDate ?? null,
+        reviewRows: matchedFilm?.reviewRows ?? 0,
+        longestReviewLength,
+        inWatchlist: matchedFilm?.inWatchlist ?? false,
+        watchlistAddedDate,
+      };
+    });
   }
 
   function buildExplorerFromRoute(route: string): FilmExplorerPayload | null {
@@ -1213,17 +1364,17 @@ export default function App() {
 
     if (kind === "films" && source === "current") {
       return buildFilmExplorerPayload(
-        scopeIsActive ? "Scoped film explorer" : "Global film explorer",
+        scopeIsActive ? "Films in this view" : "All films",
         scopeIsActive
-          ? "Unique films that match the active scope."
-          : "Unique merged film records across the full export.",
-        scopeIsActive ? "Open scoped film surface" : "Open global film surface",
+          ? "The film-level set behind the current filters."
+          : "The film-level set across the full export.",
+        scopeIsActive ? "Filtered films" : "Full film list",
         scopedFilmRows,
-        scopeIsActive ? "scoped_films.csv" : "all_films.csv",
-        "No films in the current view",
+        scopeIsActive ? "filtered_films.csv" : "all_films.csv",
+        "No films in this view",
         scopeIsActive
-          ? "The active scope currently matches no films."
-          : "Import a Letterboxd export to explore the merged film set.",
+          ? "The current filters do not match any films."
+          : "Import a Letterboxd export to open the film list.",
       );
     }
 
@@ -1231,12 +1382,12 @@ export default function App() {
       const target = Number(source);
       return buildFilmExplorerPayload(
         `Current rating ${source}`,
-        "Unique films in the current view whose current rating falls into this histogram bin.",
-        `Current rating histogram bin ${source}`,
+        "The films behind this current-rating bin.",
+        `Current rating ${source}`,
         scopedFilmRows.filter((row) => row.currentRating !== null && Math.round(row.currentRating * 2) / 2 === target),
         `current_rating_${source.replace(".", "_")}.csv`,
-        "No films in this rating bin",
-        "This current-rating bucket is empty under the active scope.",
+        "Nothing in this rating bin",
+        "This current-rating bin is empty in the current view.",
       );
     }
 
@@ -1245,15 +1396,15 @@ export default function App() {
       return buildFilmExplorerPayload(
         `Release year ${rawValue}`,
         source === "watchlist"
-          ? "Unique watchlist films from the selected release year."
-          : "Unique films from the selected release year in the current view.",
-        source === "watchlist" ? "Watchlist release year bucket" : "Release year bucket",
+          ? "Watchlist films from this release year."
+          : "Films from this release year in the current view.",
+        source === "watchlist" ? "Watchlist release year" : "Release year",
         rows.filter((row) => row.year !== null && String(row.year) === rawValue),
         `release_year_${rawValue}.csv`,
-        "No films in this release year",
+        "Nothing in this release year",
         source === "watchlist"
-          ? "The selected watchlist release-year bucket has no rows."
-          : "The selected release-year bucket has no rows in the current view.",
+          ? "This watchlist release year is empty."
+          : "This release year is empty in the current view.",
       );
     }
 
@@ -1262,27 +1413,27 @@ export default function App() {
       return buildFilmExplorerPayload(
         `Release decade ${rawValue}`,
         source === "watchlist"
-          ? "Unique watchlist films from the selected release decade."
-          : "Unique films from the selected release decade in the current view.",
-        source === "watchlist" ? "Watchlist release decade bucket" : "Release decade bucket",
+          ? "Watchlist films from this release decade."
+          : "Films from this release decade in the current view.",
+        source === "watchlist" ? "Watchlist release decade" : "Release decade",
         rows.filter((row) => row.year !== null && `${Math.floor(row.year / 10) * 10}s` === rawValue),
         `release_decade_${rawValue}.csv`,
-        "No films in this release decade",
+        "Nothing in this release decade",
         source === "watchlist"
-          ? "The selected watchlist release-decade bucket has no rows."
-          : "The selected release-decade bucket has no rows in the current view.",
+          ? "This watchlist decade is empty."
+          : "This release decade is empty in the current view.",
       );
     }
 
     if (kind === "releaseAnalyticsDecade" && source && rawValue) {
       return buildFilmExplorerPayload(
         `Release decade ${rawValue}`,
-        "Unique films behind the selected release-analytics decade row.",
-        "Release analytics decade row",
+        "The films behind this release table row.",
+        "Release decade row",
         currentReleaseFilmRows.filter((row) => row.year !== null && `${Math.floor(row.year / 10) * 10}s` === rawValue),
         `release_analytics_decade_${rawValue}.csv`,
-        "No films behind this decade row",
-        "The selected release-analytics decade has no films in the current view.",
+        "Nothing behind this row",
+        "This release decade has no films in the current view.",
       );
     }
 
@@ -1307,12 +1458,12 @@ export default function App() {
       });
       return buildFilmExplorerPayload(
         `Rating drift: ${source}`,
-        "Unique films behind the selected rating-drift bucket.",
-        `Rating drift summary bucket ${source}`,
+        "The films behind this drift bucket.",
+        `Rating drift ${source}`,
         rows,
         `rating_drift_${source}.csv`,
-        "No films in this drift bucket",
-        "The current scope contains no films for the selected drift bucket.",
+        "Nothing in this drift bucket",
+        "The current view has no films in this drift bucket.",
       );
     }
 
@@ -1320,12 +1471,12 @@ export default function App() {
       const filmKey = decodeURIComponent(source);
       return buildFilmExplorerPayload(
         "Rating drift case",
-        "Unique film behind the selected representative rating-drift case.",
-        `Representative drift list sorted by ${ratingDriftSort}`,
+        "The film behind this drift case.",
+        `Drift list sorted by ${ratingDriftSort}`,
         scopedFilmRows.filter((row) => row.filmKey === filmKey),
         "rating_drift_case.csv",
-        "No matching drift case",
-        "The representative drift case is no longer available in the current view.",
+        "No matching case",
+        "That drift case is no longer in the current view.",
       );
     }
 
@@ -1333,86 +1484,105 @@ export default function App() {
       const reviewId = decodeURIComponent(source);
       return buildReviewExplorerPayload(
         "Longest review",
-        "Review rows behind the selected longest-review entry.",
-        "Review stats longest review row",
+        "The review row behind this entry.",
+        "Longest review row",
         currentReviewRows.filter((row) => row.id === reviewId),
         "longest_review_row.csv",
         "No matching review row",
-        "That longest-review entry is no longer present in the current view.",
+        "That review row is no longer in the current view.",
       );
     }
 
     if (kind === "activityAll") {
       return buildWatchExplorerPayload(
-        scopeIsActive ? "Scoped exact watch activity" : "Global exact watch activity",
-        "Row-level exact watch events only. Films without exact watched dates stay out of this explorer.",
-        "Exact-date watch activity explorer",
+        scopeIsActive ? "Watch dates in this view" : "All watch dates",
+        "Exact watch rows only. Films without exact watch dates stay out.",
+        "Watch dates",
         currentWatchActivity.rows,
-        scopeIsActive ? "scoped_exact_watch_events.csv" : "exact_watch_events.csv",
-        "No exact watch events available",
+        scopeIsActive ? "filtered_exact_watch_events.csv" : "exact_watch_events.csv",
+        "No exact watch rows",
         scopeIsActive
-          ? "The active scope currently contains no exact watch events."
-          : "The imported export does not contain any exact watch events yet.",
+          ? "The current filters do not contain any exact watch rows."
+          : "This export does not contain any exact watch rows yet.",
       );
     }
 
     if (kind === "activityMonth" && source) {
       return buildWatchExplorerPayload(
         `Exact watch month ${source}`,
-        "Row-level exact watch events in the selected month.",
-        "Watch activity heatmap month",
+        "Exact watch rows in this month.",
+        "Watch-date heatmap month",
         filterExactWatchRowsByMonth(currentWatchActivity.rows, source),
         `exact_watch_month_${source}.csv`,
-        "No exact watch events in this month",
-        "That month has no exact watch events in the current view.",
+        "No rows in this month",
+        "That month has no exact watch rows in the current view.",
       );
     }
 
     if (kind === "activityYear" && source) {
       return buildWatchExplorerPayload(
         `Exact watch year ${source}`,
-        "Row-level exact watch events in the selected year.",
-        "Busiest exact-watch year summary",
+        "Exact watch rows in this year.",
+        "Busiest year",
         filterExactWatchRowsByYear(currentWatchActivity.rows, source),
         `exact_watch_year_${source}.csv`,
-        "No exact watch events in this year",
-        "That year has no exact watch events in the current view.",
+        "No rows in this year",
+        "That year has no exact watch rows in the current view.",
       );
     }
 
     if (kind === "activityDay" && source) {
       return buildWatchExplorerPayload(
         `Exact watch day ${source}`,
-        "Row-level exact watch events on the selected day.",
-        "Busiest exact-watch day summary",
+        "Exact watch rows on this day.",
+        "Busiest day",
         filterExactWatchRowsByDay(currentWatchActivity.rows, source),
         `exact_watch_day_${source}.csv`,
-        "No exact watch events on this day",
-        "That day has no exact watch events in the current view.",
+        "No rows on this day",
+        "That day has no exact watch rows in the current view.",
       );
     }
 
     if (kind === "activityGap" && source && rawValue) {
       return buildWatchExplorerPayload(
-        "Exact watch gap context",
-        "Row-level exact watch events immediately around the selected gap window.",
-        "Longest exact-watch gap summary",
+        "Gap context",
+        "Exact watch rows around this gap.",
+        "Longest gap",
         filterExactWatchRowsByRange(currentWatchActivity.rows, source, rawValue),
         `exact_watch_gap_${source}_${rawValue}.csv`,
-        "No exact watch events around this gap",
-        "The selected gap context does not have exact watch events in the current view.",
+        "No rows around this gap",
+        "There are no exact watch rows around this gap in the current view.",
       );
     }
 
     if (kind === "activityStreak" && source && rawValue) {
       return buildWatchExplorerPayload(
         `Exact watch streak ${source} to ${rawValue}`,
-        "Row-level exact watch events inside the selected streak window.",
-        "Best exact-date streak summary",
+        "Exact watch rows inside this streak.",
+        "Best streak",
         filterExactWatchRowsByRange(currentWatchActivity.rows, source, rawValue),
         `exact_watch_streak_${source}_${rawValue}.csv`,
-        "No exact watch events in this streak",
-        "The selected streak window does not have exact watch events in the current view.",
+        "No rows in this streak",
+        "This streak window has no exact watch rows in the current view.",
+      );
+    }
+
+    if (kind === "archiveList" && source) {
+      const listPath = decodeURIComponent(source);
+      const listFile = archiveListFiles.find((list) => list.path === listPath);
+      if (!listFile) {
+        return null;
+      }
+      const rows = buildArchiveListExplorerRows(listFile);
+      const exportLabel = listFile.metadata.title || listFile.path.split("/").pop() || "archive_list";
+      return buildFilmExplorerPayload(
+        listFile.metadata.title || "Parsed list",
+        `Films parsed from ${listFile.scope === "orphaned" ? "an archived / orphaned list export" : "this list export"}.`,
+        "Parsed list items",
+        rows,
+        `${slugifyFileName(exportLabel)}_items.csv`,
+        "No films in this list",
+        "This parsed list does not contain any film items.",
       );
     }
 
@@ -1422,14 +1592,16 @@ export default function App() {
   function openExplorerRoute(
     route: string,
     sortOverride?: { key: string; direction: ExplorerSortDirection },
+    sourceElement?: HTMLElement | null,
   ) {
     const payload = buildExplorerFromRoute(route);
     if (!payload) {
-      showToast("No drilldown rows for this view.");
+      showToast("No rows behind this yet.");
       return;
     }
     const nextSort = sortOverride || defaultExplorerSort(payload);
     const linkedSectionId = inferExplorerSectionId(route);
+    captureExplorerOrigin(sourceElement || null);
     startTransition(() => {
       setExplorerSortKey(nextSort.key);
       setExplorerSortDirection(nextSort.direction);
@@ -1438,6 +1610,7 @@ export default function App() {
       if (linkedSectionId) {
         setCollapsedSections((current) => ({ ...current, [linkedSectionId]: false }));
         setActiveSectionId(linkedSectionId);
+        cueSection(linkedSectionId);
       }
     });
   }
@@ -1453,6 +1626,7 @@ export default function App() {
       setExplorerRoute(null);
     }
   }, [
+    archiveListFiles,
     currentReleaseFilmRows,
     currentReviewRows,
     currentWatchActivity,
@@ -1478,17 +1652,17 @@ export default function App() {
     }
     writeCsv(payload.exportFileName, rows);
     triggerUiCue("share");
-    showToast("Exported current film list.");
+    showToast("Films exported.");
   }
 
   function exportCurrentDrilldown() {
     if (!explorer) {
-      showToast("No drilldown is open.");
+      showToast("No detail view is open.");
       return;
     }
     writeCsv(explorer.exportFileName, buildExplorerExportRows(explorer));
     triggerUiCue("share");
-    showToast("Exported current drilldown CSV.");
+    showToast("Detail CSV exported.");
   }
 
   async function copyCurrentViewSummary() {
@@ -1498,7 +1672,7 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(currentViewSummary.text);
       triggerUiCue("share");
-      showToast("Copied current view summary.");
+      showToast("View note copied.");
     } catch {
       showToast("Copy failed.");
     }
@@ -1506,17 +1680,17 @@ export default function App() {
 
   function exportActiveSavedViewSummary() {
     if (!activeView) {
-      showToast("Load a preset or saved view first.");
+      showToast("Open a saved view first.");
       return;
     }
     downloadTextFile(`${slugifyFileName(activeView.name)}_summary.txt`, buildSavedViewSummaryText(activeView));
     triggerUiCue("share");
-    showToast("Exported saved view summary.");
+    showToast("Saved view note exported.");
   }
 
   function saveCurrentView() {
     if (!films) {
-      showToast("Import an export before saving a view.");
+      showToast("Import an export first.");
       return;
     }
     const record = createSavedViewRecord(savedViewDraftName || "Saved view", currentViewSnapshot);
@@ -1524,7 +1698,7 @@ export default function App() {
     setSavedViewDraftName("");
     setActiveViewId(record.id);
     triggerUiCue("saved-view");
-    showToast(`Saved view: ${record.name}`);
+    showToast(`Saved: ${record.name}`);
   }
 
   function loadView(view: ViewOption) {
@@ -1542,31 +1716,32 @@ export default function App() {
       setActiveSectionId(linkedSectionId);
       setCollapsedSections((current) => ({ ...current, [linkedSectionId]: false }));
     });
+    cueSection(linkedSectionId);
     updateSectionHash(linkedSectionId, "replace");
     triggerUiCue("saved-view");
-    showToast(`Loaded view: ${view.name}`);
+    showToast(`Opened: ${view.name}`);
   }
 
   function renameSavedView(view: SavedViewRecord) {
-    const nextName = window.prompt("Rename saved view", view.name)?.trim();
+    const nextName = window.prompt("Rename this view", view.name)?.trim();
     if (!nextName || nextName === view.name) {
       return;
     }
     setSavedViews((current) => current.map((item) => item.id === view.id
       ? { ...item, name: nextName, updatedAt: new Date().toISOString() }
       : item));
-    showToast(`Renamed view: ${nextName}`);
+    showToast(`Renamed: ${nextName}`);
   }
 
   function deleteSavedView(view: SavedViewRecord) {
-    if (!window.confirm(`Delete saved view "${view.name}"?`)) {
+    if (!window.confirm(`Delete "${view.name}"?`)) {
       return;
     }
     setSavedViews((current) => current.filter((item) => item.id !== view.id));
     if (activeViewId === view.id) {
       setActiveViewId(null);
     }
-    showToast(`Deleted view: ${view.name}`);
+    showToast(`Deleted: ${view.name}`);
   }
 
   function updateExplorerSort(key: string, direction: ExplorerSortDirection) {
@@ -1578,6 +1753,7 @@ export default function App() {
     startTransition(() => {
       setScope(nextScope);
     });
+    cueSection(activeSectionId);
     triggerUiCue("scope");
   }
 
@@ -1585,6 +1761,7 @@ export default function App() {
     startTransition(() => {
       setScope(DEFAULT_ANALYSIS_SCOPE);
     });
+    cueSection(activeSectionId);
     triggerUiCue("scope");
   }
 
@@ -1607,56 +1784,60 @@ export default function App() {
     }
   }
 
-  function openHistogramBin(labelValue: string) {
-    openExplorerRoute(`histogram|${labelValue}`);
+  function openHistogramBin(labelValue: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`histogram|${labelValue}`, undefined, sourceElement);
   }
 
-  function openReleaseYearExplorer(yearLabel: string, source: "current" | "watchlist") {
-    openExplorerRoute(`releaseYear|${source}|${yearLabel}`);
+  function openReleaseYearExplorer(yearLabel: string, source: "current" | "watchlist", sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`releaseYear|${source}|${yearLabel}`, undefined, sourceElement);
   }
 
-  function openReleaseDecadeExplorer(decadeLabel: string, source: "current" | "watchlist") {
-    openExplorerRoute(`releaseDecade|${source}|${decadeLabel}`);
+  function openReleaseDecadeExplorer(decadeLabel: string, source: "current" | "watchlist", sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`releaseDecade|${source}|${decadeLabel}`, undefined, sourceElement);
   }
 
-  function openReleaseAnalyticsDecadeExplorer(decadeLabel: string) {
-    openExplorerRoute(`releaseAnalyticsDecade|current|${decadeLabel}`);
+  function openReleaseAnalyticsDecadeExplorer(decadeLabel: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`releaseAnalyticsDecade|current|${decadeLabel}`, undefined, sourceElement);
   }
 
-  function openDriftCategory(category: "comparableFilms" | "unchanged" | "changed" | "upgraded" | "downgraded") {
-    openExplorerRoute(`driftCategory|${category}`);
+  function openDriftCategory(category: "comparableFilms" | "unchanged" | "changed" | "upgraded" | "downgraded", sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`driftCategory|${category}`, undefined, sourceElement);
   }
 
-  function openDriftCaseExplorer(filmKey: string) {
-    openExplorerRoute(`driftCase|${encodeURIComponent(filmKey)}`);
+  function openDriftCaseExplorer(filmKey: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`driftCase|${encodeURIComponent(filmKey)}`, undefined, sourceElement);
   }
 
-  function openLongestReviewExplorer(reviewId: string) {
-    openExplorerRoute(`longestReview|${encodeURIComponent(reviewId)}`);
+  function openLongestReviewExplorer(reviewId: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`longestReview|${encodeURIComponent(reviewId)}`, undefined, sourceElement);
   }
 
-  function openWatchActivityExplorer() {
-    openExplorerRoute("activityAll");
+  function openWatchActivityExplorer(sourceElement?: HTMLElement | null) {
+    openExplorerRoute("activityAll", undefined, sourceElement);
   }
 
-  function openWatchActivityMonth(month: string) {
-    openExplorerRoute(`activityMonth|${month}`);
+  function openWatchActivityMonth(month: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`activityMonth|${month}`, undefined, sourceElement);
   }
 
-  function openWatchActivityYear(year: string) {
-    openExplorerRoute(`activityYear|${year}`);
+  function openWatchActivityYear(year: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`activityYear|${year}`, undefined, sourceElement);
   }
 
-  function openWatchActivityDay(day: string) {
-    openExplorerRoute(`activityDay|${day}`);
+  function openWatchActivityDay(day: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`activityDay|${day}`, undefined, sourceElement);
   }
 
-  function openWatchActivityGap(startDate: string, endDate: string) {
-    openExplorerRoute(`activityGap|${startDate}|${endDate}`);
+  function openWatchActivityGap(startDate: string, endDate: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`activityGap|${startDate}|${endDate}`, undefined, sourceElement);
   }
 
-  function openWatchActivityStreak(startDate: string, endDate: string) {
-    openExplorerRoute(`activityStreak|${startDate}|${endDate}`);
+  function openWatchActivityStreak(startDate: string, endDate: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`activityStreak|${startDate}|${endDate}`, undefined, sourceElement);
+  }
+
+  function openArchiveListExplorer(listPath: string, sourceElement?: HTMLElement | null) {
+    openExplorerRoute(`archiveList|${encodeURIComponent(listPath)}`, undefined, sourceElement);
   }
 
   const debugPayload = datasetSummary && stats
@@ -1683,6 +1864,13 @@ export default function App() {
         },
         collapsedSections,
         reducedMotion,
+      },
+      motion: {
+        uiCue,
+        attentiveSectionId,
+        enteredSectionId,
+        guidedSectionId,
+        explorerOrigin,
       },
       activeScopeInput: scope,
       activeScope: scopedView?.scope || null,
@@ -1752,11 +1940,11 @@ export default function App() {
     : [];
 
   return (
-    <div className="container">
+    <div className="container" ref={containerRef} data-ui-cue={uiCue || undefined}>
       <div className="topbar">
         <div className="brand">
-          <h1>Letterboxd AI Review</h1>
-          <div className="sub">Product-focused Letterboxd export analysis with explicit data semantics and drilldowns.</div>
+          <h1>Letterboxd Report</h1>
+          <div className="sub">A calmer read on your export: charts, notes, and film detail.</div>
         </div>
         <div className="row">
           <a className="badge" href="https://github.com/Erik0318/Letterboxd-AI-Review" target="_blank" rel="noreferrer">Project GitHub</a>
@@ -1766,22 +1954,22 @@ export default function App() {
 
       <section className={`dashboardSection reportPreludeSection${uiCue === "scope" ? " isScopeCue" : ""}${uiCue === "saved-view" ? " isSavedViewCue" : ""}`}>
         <SectionHeader
-          title="Import / Onboarding / Report Controls"
-          description="Load an export, get oriented, jump into the report map, and adjust reusable scope or saved-view controls when you need them."
+          title="Import, Notes, and Controls"
+          description="Bring in an export, get your bearings, then shape the report with filters and saved views."
         />
         <div className="grid">
           <div className="card" id="section-import">
             <h2>Import</h2>
             <div className="drop">
               <input type="file" accept=".zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onUploadZip(file); }} />
-              <div className="small">{fileName || "Upload your Letterboxd export ZIP"}</div>
-              <div className="small">All parsing and stats run locally in your browser. Refresh clears everything.</div>
-              <button className="btn primary" style={{ marginTop: 10 }} onClick={onLoadSample}>Use sample_data.zip</button>
+              <div className="small">{fileName || "Drop in a Letterboxd export ZIP"}</div>
+              <div className="small">Everything runs locally in the browser. Refresh clears the session.</div>
+              <button className="btn primary" style={{ marginTop: 10 }} onClick={onLoadSample}>Load sample_data.zip</button>
             </div>
 
             <div className="row" style={{ marginTop: 12 }}>
               <div>
-                <div className="small">Label on share card</div>
+                <div className="small">Name on the share card</div>
                 <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Optional" />
               </div>
               <div>
@@ -1798,7 +1986,7 @@ export default function App() {
               <div className="row" style={{ marginTop: 10 }}>
                 <span className="badge">{formatInt(films?.length || 0)} merged film records</span>
                 <span className="badge">{formatInt(stats.overview.watchedFilmsUnique.value)} watched films</span>
-                <span className="badge">{formatInt(stats.overview.exactDatedWatchedFilms.value)} exact-dated watched films</span>
+                <span className="badge">{formatInt(stats.overview.exactDatedWatchedFilms.value)} exact watch dates</span>
                 <span className="badge">{formatInt(stats.quickFacts.watchlistFilms.value)} watchlist films</span>
                 <span className="badge">{formatInt(stats.quickFacts.reviewRows.value)} review rows</span>
               </div>
@@ -1862,7 +2050,7 @@ export default function App() {
               onExportSummary={(view) => {
                 downloadTextFile(`${slugifyFileName(view.name)}_summary.txt`, buildSavedViewSummaryText(view));
                 triggerUiCue("share");
-                showToast("Exported saved view summary.");
+                showToast("Saved view note exported.");
               }}
             />
           )}
@@ -1879,9 +2067,14 @@ export default function App() {
             collapsed={collapsedSections.overview}
             revealed={revealedSectionIds.includes("overview")}
             linkedToExplorer={explorerSectionId === "overview" && !!explorer}
+            attentive={attentiveSectionId === "overview"}
+            entered={enteredSectionId === "overview"}
+            guided={guidedSectionId === "overview"}
             metrics={reportMenuMetricsById.overview || []}
             onToggle={() => toggleSection("overview")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("overview")}
+            onPointerLeave={() => handleSectionPointerLeave("overview")}
           >
             <div className="grid">
               {overviewCards.map((card) => (
@@ -1897,7 +2090,7 @@ export default function App() {
               ))}
 
               <div className="card span6">
-                <h2>{scopeIsActive ? "Quick facts in current report" : "Quick facts"}</h2>
+                <h2>{scopeIsActive ? "Quick facts in this view" : "Quick facts"}</h2>
                 <div className="row">
                   {quickFacts.map((item) => (
                     <div className="badge" key={item.label}>
@@ -1908,7 +2101,7 @@ export default function App() {
               </div>
 
               <div className="card span6">
-                <h2>{scopeIsActive ? "Coverage in current report" : "Coverage"}</h2>
+                <h2>{scopeIsActive ? "Coverage in this view" : "Coverage"}</h2>
                 <div className="row">
                   {coverageFacts.map((item) => (
                     <div className="badge" key={item.label}>
@@ -1927,18 +2120,18 @@ export default function App() {
                 label={label}
                 shareContextItems={reportShareContextItems}
                 labels={{
-                  generated: "Generated",
-                  badge: "Badge",
-                  watched: scopeIsActive ? "Scoped films" : "Watched films",
-                  rated: "Current rated films",
-                  meanRating: "Current mean",
-                  median: "Current median",
-                  longestStreak: scopeIsActive ? "Scoped streak (exact dates)" : "Best streak (exact dates)",
+                  generated: "Made",
+                  badge: "Tag",
+                  watched: scopeIsActive ? "Films in view" : "Watched",
+                  rated: "Current ratings",
+                  meanRating: "Mean",
+                  median: "Median",
+                  longestStreak: scopeIsActive ? "Best streak in view" : "Best streak",
                   commitment: "Commitment",
                   topWords: "Top words",
-                  oneLine: "One line",
+                  oneLine: "In one line",
                   na: "n/a",
-                  titleSuffix: scopeIsActive ? "scoped report" : "taste report",
+                  titleSuffix: "report",
                 }}
                 onCopySummary={() => { void copyCurrentViewSummary(); }}
                 onDownloadShareCard={() => { void downloadShareCard(); }}
@@ -1958,16 +2151,21 @@ export default function App() {
             collapsed={collapsedSections["watched-activity"]}
             revealed={revealedSectionIds.includes("watched-activity")}
             linkedToExplorer={explorerSectionId === "watched-activity" && !!explorer}
+            attentive={attentiveSectionId === "watched-activity"}
+            entered={enteredSectionId === "watched-activity"}
+            guided={guidedSectionId === "watched-activity"}
             metrics={reportMenuMetricsById["watched-activity"] || []}
             onToggle={() => toggleSection("watched-activity")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("watched-activity")}
+            onPointerLeave={() => handleSectionPointerLeave("watched-activity")}
           >
             <div className="grid">
               <WatchActivityPanel
                 activity={currentWatchActivity}
-                title={scopeIsActive ? "Exact-date watch activity in scope" : "Exact-date watch activity"}
+                title={scopeIsActive ? "Watch dates in this view" : "Watch dates"}
                 subtitle={scopeIsActive
-                  ? "Exact-date only within the active scope. Films in scope without exact dates stay out of this module."
+                  ? "Exact watch dates only. Films in this view without one stay out."
                   : undefined}
                 onOpenAll={openWatchActivityExplorer}
                 onMonthClick={openWatchActivityMonth}
@@ -1987,30 +2185,35 @@ export default function App() {
             collapsed={collapsedSections.ratings}
             revealed={revealedSectionIds.includes("ratings")}
             linkedToExplorer={explorerSectionId === "ratings" && !!explorer}
+            attentive={attentiveSectionId === "ratings"}
+            entered={enteredSectionId === "ratings"}
+            guided={guidedSectionId === "ratings"}
             metrics={reportMenuMetricsById.ratings || []}
             onToggle={() => toggleSection("ratings")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("ratings")}
+            onPointerLeave={() => handleSectionPointerLeave("ratings")}
           >
             <div className="grid">
               <div className="span6">
                 <BarList
-                  title={scopeIsActive ? "Current rating histogram in scope" : "Current rating histogram"}
-                  subtitle={scopeIsActive ? "Current-rating distribution across films in the active scope." : undefined}
+                  title={scopeIsActive ? "Current ratings in this view" : "Current ratings"}
+                  subtitle={scopeIsActive ? "Current-rating spread across the current view." : undefined}
                   items={ratingHistogram}
                   emptyText="No rating data."
-                  onItemClick={(item) => openHistogramBin(item.label)}
+                  onItemClick={(item, sourceElement) => openHistogramBin(item.label, sourceElement)}
                 />
               </div>
               <RatingDriftPanel
                 drift={currentRatingDrift || stats.ratingDrift}
                 sort={ratingDriftSort}
                 onSortChange={setRatingDriftSort}
-                title={scopeIsActive ? "Rating drift in scope" : "Rating drift"}
+                title={scopeIsActive ? "Rating drift in this view" : "Rating drift"}
                 subtitle={scopeIsActive
-                  ? "Logged rating = rating recorded on a diary/review log entry. Current rating = the ratings.csv snapshot right now. Delta = currentRating - loggedRating inside the active scope."
+                  ? "Logged and current ratings stay separate inside this view. Drift is current minus logged."
                   : undefined}
                 onCategoryClick={openDriftCategory}
-                onCaseClick={(item) => openDriftCaseExplorer(item.filmKey)}
+                onCaseClick={(item, sourceElement) => openDriftCaseExplorer(item.filmKey, sourceElement)}
               />
             </div>
           </ReportSection>
@@ -2023,16 +2226,21 @@ export default function App() {
             collapsed={collapsedSections.reviews}
             revealed={revealedSectionIds.includes("reviews")}
             linkedToExplorer={explorerSectionId === "reviews" && !!explorer}
+            attentive={attentiveSectionId === "reviews"}
+            entered={enteredSectionId === "reviews"}
+            guided={guidedSectionId === "reviews"}
             metrics={reportMenuMetricsById.reviews || []}
             onToggle={() => toggleSection("reviews")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("reviews")}
+            onPointerLeave={() => handleSectionPointerLeave("reviews")}
           >
             <div className="grid">
               <ReviewStatsPanel
                 reviews={currentReviews || stats.reviews}
-                title={scopeIsActive ? "Review stats in scope" : "Review stats"}
-                subtitle={scopeIsActive ? "Review rows and reviewed films within the active scope. Length stats use review rows with non-empty text only." : undefined}
-                onLongestReviewClick={(row) => openLongestReviewExplorer(row.id)}
+                title={scopeIsActive ? "Reviews in this view" : "Reviews"}
+                subtitle={scopeIsActive ? "Review rows and reviewed films inside the current view. Length stats use rows with text only." : undefined}
+                onLongestReviewClick={(row, sourceElement) => openLongestReviewExplorer(row.id, sourceElement)}
               />
             </div>
           </ReportSection>
@@ -2045,34 +2253,39 @@ export default function App() {
             collapsed={collapsedSections.release}
             revealed={revealedSectionIds.includes("release")}
             linkedToExplorer={explorerSectionId === "release" && !!explorer}
+            attentive={attentiveSectionId === "release"}
+            entered={enteredSectionId === "release"}
+            guided={guidedSectionId === "release"}
             metrics={reportMenuMetricsById.release || []}
             onToggle={() => toggleSection("release")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("release")}
+            onPointerLeave={() => handleSectionPointerLeave("release")}
           >
             <div className="grid">
               <div className="span6">
                 <BarList
-                  title={scopeIsActive ? "Top release years in scope" : "Top release years by watched films"}
-                  subtitle={scopeIsActive ? "Unique films in the active scope grouped by release year." : undefined}
+                  title={scopeIsActive ? "Top release years in this view" : "Top release years"}
+                  subtitle={scopeIsActive ? "Films in the current view grouped by release year." : undefined}
                   items={topReleaseYears}
-                  emptyText="No watched release years."
-                  onItemClick={(item) => openReleaseYearExplorer(item.label, "current")}
+                  emptyText="No release years yet."
+                  onItemClick={(item, sourceElement) => openReleaseYearExplorer(item.label, "current", sourceElement)}
                 />
               </div>
               <div className="span6">
                 <BarList
-                  title={scopeIsActive ? "Top decades in scope" : "Top decades by watched films"}
-                  subtitle={scopeIsActive ? "Unique films in the active scope grouped by release decade." : undefined}
+                  title={scopeIsActive ? "Top decades in this view" : "Top decades"}
+                  subtitle={scopeIsActive ? "Films in the current view grouped by decade." : undefined}
                   items={topDecades}
-                  emptyText="No watched decades."
-                  onItemClick={(item) => openReleaseDecadeExplorer(item.label, "current")}
+                  emptyText="No decades yet."
+                  onItemClick={(item, sourceElement) => openReleaseDecadeExplorer(item.label, "current", sourceElement)}
                 />
               </div>
               <ReleaseAnalyticsPanel
                 releaseAnalytics={currentReleaseAnalytics || stats.releaseAnalytics}
-                title={scopeIsActive ? "Release analytics in scope" : "Release analytics"}
-                subtitle={scopeIsActive ? "Release-year and decade metrics computed only from films in the active scope." : undefined}
-                onDecadeClick={(row) => openReleaseAnalyticsDecadeExplorer(row.decade)}
+                title={scopeIsActive ? "Release years in this view" : "Release years"}
+                subtitle={scopeIsActive ? "Release-year and decade metrics computed from the current view only." : undefined}
+                onDecadeClick={(row, sourceElement) => openReleaseAnalyticsDecadeExplorer(row.decade, sourceElement)}
               />
             </div>
           </ReportSection>
@@ -2085,34 +2298,39 @@ export default function App() {
             collapsed={collapsedSections.watchlist}
             revealed={revealedSectionIds.includes("watchlist")}
             linkedToExplorer={explorerSectionId === "watchlist" && !!explorer}
+            attentive={attentiveSectionId === "watchlist"}
+            entered={enteredSectionId === "watchlist"}
+            guided={guidedSectionId === "watchlist"}
             metrics={reportMenuMetricsById.watchlist || []}
             onToggle={() => toggleSection("watchlist")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("watchlist")}
+            onPointerLeave={() => handleSectionPointerLeave("watchlist")}
           >
             <div className="grid">
               <BacklogPanel backlog={stats.backlog} />
               <div className="span6">
                 <Heatmap
                   byMonth={stats.backlog.timeline.byMonth}
-                  title="Watchlist add timeline"
-                  emptyText="No watchlist add dates found in the export."
-                  footerText="Unique watchlist films grouped by earliest watchlist add date found."
+                  title="Watchlist timeline"
+                  emptyText="No watchlist add dates yet."
+                  footerText="Watchlist films grouped by their earliest add date."
                 />
               </div>
               <div className="span6">
                 <BarList
                   title="Top watchlist release years"
                   items={watchlistReleaseYears}
-                  emptyText="No watchlist release years."
-                  onItemClick={(item) => openReleaseYearExplorer(item.label, "watchlist")}
+                  emptyText="No watchlist years yet."
+                  onItemClick={(item, sourceElement) => openReleaseYearExplorer(item.label, "watchlist", sourceElement)}
                 />
               </div>
               <div className="span6">
                 <BarList
                   title="Top watchlist decades"
                   items={watchlistDecades}
-                  emptyText="No watchlist decades."
-                  onItemClick={(item) => openReleaseDecadeExplorer(item.label, "watchlist")}
+                  emptyText="No watchlist decades yet."
+                  onItemClick={(item, sourceElement) => openReleaseDecadeExplorer(item.label, "watchlist", sourceElement)}
                 />
               </div>
             </div>
@@ -2126,12 +2344,21 @@ export default function App() {
             collapsed={collapsedSections.archives}
             revealed={revealedSectionIds.includes("archives")}
             linkedToExplorer={explorerSectionId === "archives" && !!explorer}
+            attentive={attentiveSectionId === "archives"}
+            entered={enteredSectionId === "archives"}
+            guided={guidedSectionId === "archives"}
             metrics={reportMenuMetricsById.archives || []}
             onToggle={() => toggleSection("archives")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("archives")}
+            onPointerLeave={() => handleSectionPointerLeave("archives")}
           >
             <div className="grid">
-              <ArchiveListsPanel archives={stats.archives} />
+              <ArchiveListsPanel
+                archives={stats.archives}
+                lists={archiveListFiles}
+                onListClick={(list, sourceElement) => openArchiveListExplorer(list.path, sourceElement)}
+              />
             </div>
           </ReportSection>
 
@@ -2143,27 +2370,32 @@ export default function App() {
             collapsed={collapsedSections["data-quality"]}
             revealed={revealedSectionIds.includes("data-quality")}
             linkedToExplorer={explorerSectionId === "data-quality" && !!explorer}
+            attentive={attentiveSectionId === "data-quality"}
+            entered={enteredSectionId === "data-quality"}
+            guided={guidedSectionId === "data-quality"}
             metrics={reportMenuMetricsById["data-quality"] || []}
             onToggle={() => toggleSection("data-quality")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("data-quality")}
+            onPointerLeave={() => handleSectionPointerLeave("data-quality")}
           >
             <div className="grid">
               <DataQualityPanel
                 dataQuality={stats.dataQuality}
                 sections={groupedDataQuality}
-                subtitle={scopeIsActive ? "Global export audit. Scope filters do not change the underlying export reliability." : undefined}
+                subtitle={scopeIsActive ? "This stays tied to the full export. Filters do not change reliability." : undefined}
                 onJumpToSection={handleDataQualityJumpTarget}
               />
 
               <div className="card">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <h2>Debug summary</h2>
-                    <div className="small">Selector-aligned debug payload for verification and regression checks.</div>
+                    <h2>Debug</h2>
+                    <div className="small">The live state behind the current page.</div>
                   </div>
                   <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input type="checkbox" checked={showDebug} onChange={(event) => setShowDebug(event.target.checked)} />
-                    Show debug summary
+                    Show debug
                   </label>
                 </div>
 
@@ -2171,8 +2403,8 @@ export default function App() {
                   <div style={{ marginTop: 10 }}>
                     <div className="small">recognized files: {datasetSummary.recognizedFiles.join(", ") || "none"}</div>
                     <div className="small">unknown files: {datasetSummary.unknownFiles.map((item) => item.path).join(", ") || "none"}</div>
-                    <div className="small">exact-dated watched films coverage: {formatPct(datasetSummary.dateQualitySummary.exactDatedWatchedFilmCoverage)}</div>
-                    <div className="small">watched films without exact date: {formatInt(datasetSummary.dateQualitySummary.watchedFilmsWithoutExactDate)}</div>
+                    <div className="small">exact watch date coverage: {formatPct(datasetSummary.dateQualitySummary.exactDatedWatchedFilmCoverage)}</div>
+                    <div className="small">missing exact watch dates: {formatInt(datasetSummary.dateQualitySummary.watchedFilmsWithoutExactDate)}</div>
                     <div className="small">lists parsed: {formatInt(datasetSummary.listSummary.activeListCount)} active / {formatInt(datasetSummary.listSummary.archivedListCount)} archived</div>
                     <div className="small">sample date probe: {JSON.stringify(sampleDateProbe)}</div>
                     <pre style={{ whiteSpace: "pre-wrap", margin: "10px 0 0", overflowX: "auto", fontSize: 12, color: "var(--muted)" }}>
@@ -2180,7 +2412,7 @@ export default function App() {
                     </pre>
                   </div>
                 ) : (
-                  <p>Enable debug summary to inspect the selector payload behind the current page state.</p>
+                  <p>Turn on debug to inspect the live payload behind this page.</p>
                 )}
               </div>
             </div>
@@ -2194,13 +2426,18 @@ export default function App() {
             collapsed={collapsedSections.ai}
             revealed={revealedSectionIds.includes("ai")}
             linkedToExplorer={explorerSectionId === "ai" && !!explorer}
+            attentive={attentiveSectionId === "ai"}
+            entered={enteredSectionId === "ai"}
+            guided={guidedSectionId === "ai"}
             metrics={reportMenuMetricsById.ai || []}
             onToggle={() => toggleSection("ai")}
             onJumpToMenu={jumpToReportMenu}
+            onPointerEnter={() => handleSectionPointerEnter("ai")}
+            onPointerLeave={() => handleSectionPointerLeave("ai")}
           >
             <div className="grid">
               <div className="card">
-                <h2>AI Roast / Praise</h2>
+                <h2>AI notes</h2>
                 <div className="row">
                   <div>
                     <div className="small">Mode</div>
@@ -2212,9 +2449,9 @@ export default function App() {
                   <div>
                     <div className="small">Intensity</div>
                     <select value={roastLevel} onChange={(event) => setRoastLevel(Number(event.target.value) as 1 | 2 | 3)}>
-                      <option value={1}>Mild</option>
-                      <option value={2}>Normal</option>
-                      <option value={3}>Savage</option>
+                      <option value={1}>Soft</option>
+                      <option value={2}>Medium</option>
+                      <option value={3}>Sharp</option>
                     </select>
                   </div>
                   <div>
@@ -2240,26 +2477,26 @@ export default function App() {
                     <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="deepseek-chat" />
                   </div>
                   <button className="btn primary" onClick={runAI} disabled={aiBusy}>
-                    {aiBusy ? "Analyzing..." : "Generate"}
+                    {aiBusy ? "Writing..." : "Write notes"}
                   </button>
                 </div>
                 <p className="small" style={{ marginTop: 10 }}>
-                  Default backend model is DeepSeek. Other models require your own API settings.
+                  The default backend model is DeepSeek. Other models need your own API settings.
                 </p>
 
                 {aiBusy && (
                   <div className="kpi" style={{ marginTop: 10 }}>
-                    <div className="label">AI analysis progress</div>
+                    <div className="label">AI progress</div>
                     <div className="bar" style={{ height: 14, marginTop: 8 }}><div style={{ width: `${aiProgress}%` }} /></div>
                     <div className="small" style={{ marginTop: 6 }}>
-                      {aiProgress < 30 ? "Building full film dossier..." : aiProgress < 60 ? "Extracting patterns..." : aiProgress < 85 ? "Writing critique..." : "Final polishing..."}
+                      {aiProgress < 30 ? "Reading the report..." : aiProgress < 60 ? "Finding patterns..." : aiProgress < 85 ? "Writing..." : "Finishing..."}
                     </div>
                   </div>
                 )}
 
                 {aiText && (
                   <div className="card" style={{ marginTop: 12 }}>
-                    <h2>AI output</h2>
+                    <h2>Draft</h2>
                     <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", color: "var(--text)" }}>{aiText}</pre>
                   </div>
                 )}
@@ -2285,11 +2522,15 @@ export default function App() {
         payload={explorer}
         sortKey={explorerSortKey}
         direction={explorerSortDirection}
+        origin={explorerOrigin}
         onSortChange={updateExplorerSort}
         sourceSectionId={explorerSectionId}
         sourceSectionTitle={explorerSectionId ? getReportSectionTitle(explorerSectionId) : null}
         contextTrail={explorerContextTrail}
         onClose={() => {
+          if (explorerSectionId) {
+            cueSection(explorerSectionId);
+          }
           startTransition(() => {
             setExplorer(null);
             setExplorerRoute(null);
@@ -2298,7 +2539,7 @@ export default function App() {
         onExport={(rows, exportFileName) => {
           writeCsv(exportFileName, rows);
           triggerUiCue("share");
-          showToast("Exported drilldown CSV.");
+          showToast("Detail CSV exported.");
         }}
         onToast={showToast}
       />

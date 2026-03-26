@@ -37,8 +37,8 @@ export default function ShareExportPanel({
 }) {
   return (
     <div className={`card${className ? ` ${className}` : ""}`}>
-      <h2>Share / export</h2>
-      <div className="small">{summary.description}</div>
+      <h2>Share & export</h2>
+      <div className="small">{summary.heading}. {summary.description}</div>
 
       <div className="viewSummaryBlock">
         <div className="viewSummaryContext">
@@ -59,12 +59,12 @@ export default function ShareExportPanel({
       </div>
 
       <div className="row" style={{ marginTop: 12 }}>
-        <button className="btn primary" type="button" onClick={onCopySummary}>Copy current view summary</button>
-        <button className="btn" type="button" onClick={onExportFilmList}>Export current film list CSV</button>
-        {onExportDrilldown && <button className="btn" type="button" onClick={onExportDrilldown}>Export current drilldown CSV</button>}
-        {onExportSavedViewSummary && <button className="btn" type="button" onClick={onExportSavedViewSummary}>Export saved view summary</button>}
-        <button className="btn primary" type="button" onClick={onDownloadShareCard}>Download report share card PNG</button>
-        <button className="btn" type="button" onClick={onPrint}>Print current view</button>
+        <button className="btn primary" type="button" onClick={onCopySummary}>Copy view note</button>
+        <button className="btn" type="button" onClick={onExportFilmList}>Export films CSV</button>
+        {onExportDrilldown && <button className="btn" type="button" onClick={onExportDrilldown}>Export detail CSV</button>}
+        {onExportSavedViewSummary && <button className="btn" type="button" onClick={onExportSavedViewSummary}>Export saved view note</button>}
+        <button className="btn primary" type="button" onClick={onDownloadShareCard}>Save share card</button>
+        <button className="btn" type="button" onClick={onPrint}>Print view</button>
       </div>
 
       <div style={{ marginTop: 12 }}>

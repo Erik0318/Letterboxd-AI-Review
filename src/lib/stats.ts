@@ -474,16 +474,16 @@ const STOPWORDS = new Set([
 ]);
 
 export const ANALYSIS_SCOPE_BASIS_LABELS: Record<AnalysisScopeBasis, string> = {
-  globalDefault: "Global default",
+  globalDefault: "Full report",
   watchedFilms: "Watched films",
-  currentRatedFilms: "Current-rated films",
-  loggedRatedFilms: "Logged-rated films",
+  currentRatedFilms: "Current ratings",
+  loggedRatedFilms: "Logged ratings",
   reviewedFilms: "Reviewed films",
-  exactDatedWatchedFilms: "Exact-dated watched films",
-  comparableDriftFilms: "Comparable drift films",
-  changedDriftFilms: "Changed drift films",
-  upgradedDriftFilms: "Upgraded drift films",
-  downgradedDriftFilms: "Downgraded drift films",
+  exactDatedWatchedFilms: "Exact watch dates",
+  comparableDriftFilms: "Comparable ratings",
+  changedDriftFilms: "Changed ratings",
+  upgradedDriftFilms: "Raised ratings",
+  downgradedDriftFilms: "Lowered ratings",
 };
 
 function tokenise(text: string): string[] {
@@ -837,43 +837,43 @@ function buildScopeFilterChips(scope: AnalysisScope): ScopeFilterChip[] {
   if (scope.basis !== "globalDefault") {
     chips.push({
       key: "basis",
-      label: "Basis",
+      label: "Base",
       value: ANALYSIS_SCOPE_BASIS_LABELS[scope.basis],
     });
   }
   if (scope.releaseDecade) {
     chips.push({
       key: "releaseDecade",
-      label: "Release decade",
+      label: "Decade",
       value: scope.releaseDecade,
     });
   }
   if (scope.releaseYearMin !== null || scope.releaseYearMax !== null) {
     chips.push({
       key: "releaseYearRange",
-      label: "Release year range",
+      label: "Years",
       value: `${scope.releaseYearMin ?? "?"} to ${scope.releaseYearMax ?? "?"}`,
     });
   }
   if (scope.currentRatingMin !== null || scope.currentRatingMax !== null) {
     chips.push({
       key: "currentRatingRange",
-      label: "Current rating range",
+      label: "Current rating",
       value: `${scope.currentRatingMin ?? "?"} to ${scope.currentRatingMax ?? "?"}`,
     });
   }
   if (scope.loggedRatingMin !== null || scope.loggedRatingMax !== null) {
     chips.push({
       key: "loggedRatingRange",
-      label: "Logged rating range",
+      label: "Logged rating",
       value: `${scope.loggedRatingMin ?? "?"} to ${scope.loggedRatingMax ?? "?"}`,
     });
   }
   if (scope.reviewPresence !== "all") {
     chips.push({
       key: "reviewPresence",
-      label: "Review presence",
-      value: scope.reviewPresence === "hasReview" ? "Has review" : "No review",
+      label: "Reviews",
+      value: scope.reviewPresence === "hasReview" ? "With review" : "No review",
     });
   }
   return chips;
@@ -882,7 +882,7 @@ function buildScopeFilterChips(scope: AnalysisScope): ScopeFilterChip[] {
 function scopeSummaryText(scope: AnalysisScope): string {
   const chips = buildScopeFilterChips(scope);
   if (!chips.length) {
-    return "Global default view.";
+    return "Full report.";
   }
   return chips.map((chip) => `${chip.label}: ${chip.value}`).join(" | ");
 }
@@ -936,7 +936,7 @@ export function applyAnalysisScope(films: FilmRecord[], scope: AnalysisScope): {
 function describeScope(scope: AnalysisScope): string {
   const chips = buildScopeFilterChips(scope);
   if (!chips.length) {
-    return "Global default view";
+    return "Full report";
   }
   return chips.map((chip) => `${chip.label}: ${chip.value}`).join(" | ");
 }
@@ -1235,7 +1235,7 @@ function buildShareCardSummary(
     topWords,
     oneLine:
       `${label}: ${formatInt(films.length)} ${viewLabel.toLowerCase()}, ` +
-      `${formatInt(currentRatedFilms)} current rated films, ` +
+      `${formatInt(currentRatedFilms)} with current ratings, ` +
       `mean ${currentMeanRating === null ? "n/a" : round3(currentMeanRating)}`,
   };
 }
@@ -1257,19 +1257,19 @@ export function computeScopedView(
     .map((film) => film.loggedRating)
     .filter((rating): rating is number => rating !== null);
   const ratingDrift = buildRatingDrift(scopedFilms);
-  const shareCard = buildShareCardSummary(scopedFilms, label, "Scoped films");
+  const shareCard = buildShareCardSummary(scopedFilms, label, "Films in view");
   const currentSummary = makeRatingSummary(currentRatings, "currentRating on scoped unique film records");
   const loggedSummary = makeRatingSummary(loggedRatings, "loggedRating on scoped unique film records");
   const scopedShareText: ScopedView["shareText"] = {
     short:
-      `${label}: ${formatInt(scopedFilms.length)} scoped films | ${scopedSelection.summary} | ` +
-      `${formatInt(counts.currentRatedFilms)} current rated films`,
+      `${label}: ${formatInt(scopedFilms.length)} films in view, ` +
+      `${formatInt(counts.currentRatedFilms)} with current ratings.`,
     long:
-      `${label} scoped view: ${scopedSelection.summary} ` +
-      `=> ${formatInt(scopedFilms.length)} films, ${formatInt(counts.currentRatedFilms)} current rated films, ` +
-      `${formatInt(counts.loggedRatedFilms)} logged-rated films, ${formatInt(counts.reviewedFilms)} reviewed films, ` +
-      `current mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}, ` +
-      `mean delta ${ratingDrift.summary.meanDelta.value === null ? "n/a" : round3(ratingDrift.summary.meanDelta.value)}.`,
+      `${label}: ${scopedSelection.summary}. ` +
+      `${formatInt(scopedFilms.length)} films in view, ${formatInt(counts.currentRatedFilms)} with current ratings, ` +
+      `${formatInt(counts.loggedRatedFilms)} with logged ratings, ${formatInt(counts.reviewedFilms)} reviewed. ` +
+      `Current mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}. ` +
+      `Mean drift ${ratingDrift.summary.meanDelta.value === null ? "n/a" : round3(ratingDrift.summary.meanDelta.value)}.`,
   };
   const releaseDistribution = makeReleaseDistribution(
     scopedFilms,
@@ -1293,27 +1293,27 @@ export function computeScopedView(
       },
       currentRatedFilms: {
         value: counts.currentRatedFilms,
-        basis: "scoped films with currentRating",
+        basis: "films in the current view with currentRating",
       },
       loggedRatedFilms: {
         value: counts.loggedRatedFilms,
-        basis: "scoped films with loggedRating",
+        basis: "films in the current view with loggedRating",
       },
       reviewedFilms: {
         value: counts.reviewedFilms,
-        basis: "scoped films with review rows",
+        basis: "films in the current view with review rows",
       },
       exactDatedWatchedFilms: {
         value: counts.exactDatedWatchedFilms,
-        basis: "scoped films with an exact watched date",
+        basis: "films in the current view with an exact watched date",
       },
       currentMeanRating: {
         value: currentSummary.mean,
-        basis: "mean of currentRating across scoped films",
+        basis: "mean of currentRating across films in the current view",
       },
       meanDelta: {
         value: ratingDrift.summary.meanDelta.value,
-        basis: "mean of currentRating - loggedRating across scoped comparable films",
+        basis: "mean of currentRating - loggedRating across comparable films in the current view",
       },
     },
     ratings: {
@@ -1323,29 +1323,29 @@ export function computeScopedView(
     ratingDrift,
     reviews: buildReviewStats(
       scopedFilms,
-      "Review rate within scoped films",
-      "reviewed films divided by scoped films",
+      "Review rate",
+      "reviewed films divided by films in the current view",
     ),
     releaseAnalytics: buildReleaseAnalytics(scopedFilms),
     releaseDistribution,
     shareCard,
     shareText: {
       short:
-        `${label}: ${formatInt(scopedFilms.length)} scoped films | ${scopedSelection.summary} | ` +
-        `${formatInt(counts.currentRatedFilms)} current rated films`,
+        `${label}: ${formatInt(scopedFilms.length)} films in view, ` +
+        `${formatInt(counts.currentRatedFilms)} with current ratings.`,
       long:
-        `${label} scoped view: ${scopedSelection.summary} ` +
-        `=> ${formatInt(scopedFilms.length)} films, ${formatInt(counts.currentRatedFilms)} current rated films, ` +
-        `${formatInt(counts.loggedRatedFilms)} logged-rated films, ${formatInt(counts.reviewedFilms)} reviewed films, ` +
-        `current mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}, ` +
-        `mean delta ${ratingDrift.summary.meanDelta.value === null ? "n/a" : round3(ratingDrift.summary.meanDelta.value)}.`,
+        `${label}: ${scopedSelection.summary}. ` +
+        `${formatInt(scopedFilms.length)} films in view, ${formatInt(counts.currentRatedFilms)} with current ratings, ` +
+        `${formatInt(counts.loggedRatedFilms)} with logged ratings, ${formatInt(counts.reviewedFilms)} reviewed. ` +
+        `Current mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}. ` +
+        `Mean drift ${ratingDrift.summary.meanDelta.value === null ? "n/a" : round3(ratingDrift.summary.meanDelta.value)}.`,
     },
     filmRows: buildExplorerFilmRows(scopedFilms),
     reviewRows: buildExplorerReviewRows(scopedFilms),
     panelNotes: {
-      activity: "Global exact-dated watched activity. Active scope filters do not apply to this panel.",
-      backlog: "Global watchlist dataset. Active scope filters do not apply to this panel.",
-      archives: "Global archive + lists dataset. Active scope filters do not apply to this panel.",
+      activity: "Watch dates follow the current filters and still require exact dates.",
+      backlog: "Watchlist stays separate from the filtered watched set.",
+      archives: "Lists and archive stay global.",
     },
   };
   return Object.assign(scopedView, { shareText: scopedShareText });
@@ -1451,21 +1451,21 @@ function buildDataQualityStats(films: FilmRecord[], summary: DatasetSummary): Da
     moduleCoverage: [
       {
         id: "watchedTimeline",
-        label: "Watched timeline coverage",
+        label: "Watch-date coverage",
         covered: summary.dateQualitySummary.exactDatedWatchedFilms,
         total: summary.coverageSummary.watchedUniverseFilmCount,
         coverage: summary.coverageSummary.watchedUniverseFilmCount
           ? summary.dateQualitySummary.exactDatedWatchedFilms / summary.coverageSummary.watchedUniverseFilmCount
           : null,
-        note: "Default watched-time charts only use exact watched dates, so watched films without an exact date stay out.",
+        note: "Default watch-time charts only use exact watch dates, so films without one stay out.",
       },
       {
         id: "ratingDrift",
-        label: "Rating drift comparable coverage",
+        label: "Drift coverage",
         covered: summary.ratingSourceSummary.both,
         total: ratingUniverse,
         coverage: ratingUniverse ? summary.ratingSourceSummary.both / ratingUniverse : null,
-        note: "Rating drift only compares films that have both currentRating and loggedRating.",
+        note: "Drift only compares films that have both currentRating and loggedRating.",
       },
       {
         id: "reviewText",
@@ -1475,7 +1475,7 @@ function buildDataQualityStats(films: FilmRecord[], summary: DatasetSummary): Da
         coverage: (summary.tableRowCounts["reviews.csv"] || 0)
           ? reviewTextRows / (summary.tableRowCounts["reviews.csv"] || 0)
           : null,
-        note: "Longest-review and word stats rely on non-empty review text rows.",
+        note: "Top words and longest reviews rely on non-empty review text rows.",
       },
       {
         id: "watchlistTimeline",
@@ -1485,7 +1485,7 @@ function buildDataQualityStats(films: FilmRecord[], summary: DatasetSummary): Da
         coverage: summary.coverageSummary.watchlistFilmCount
           ? watchlistFilmsWithAddDate / summary.coverageSummary.watchlistFilmCount
           : null,
-        note: "Watchlist timeline uses earliest add dates from watchlist.csv when those dates are present.",
+        note: "The watchlist timeline uses earliest add dates from watchlist.csv when they exist.",
       },
     ],
     tables: {
@@ -1642,7 +1642,7 @@ export function computeStats(
   const ratingDrift = buildRatingDrift(films);
   const globalReviewStats = buildReviewStats(
     watchedUniverseFilms,
-    "Review rate among watched films",
+    "Review rate",
     "reviewed films divided by watched films",
   );
   const globalReleaseAnalytics = buildReleaseAnalytics(watchedUniverseFilms);
@@ -1876,27 +1876,25 @@ export function computeStats(
       topWords: topWords.slice(0, 10).map((word) => word.word),
       oneLine:
         `${label}: ${formatInt(watchedFilmsUnique)} watched films, ` +
-        `${formatInt(exactDatedWatchedFilms)} exact-dated watched films, ` +
-        `${formatInt(watchedFilmsWithoutExactDate)} watched films without exact date, ` +
-        `${formatInt(currentRatedFilmCount)} current rated films, ` +
+        `${formatInt(exactDatedWatchedFilms)} with exact watch dates, ` +
+        `${formatInt(watchedFilmsWithoutExactDate)} missing exact watch dates, ` +
+        `${formatInt(currentRatedFilmCount)} with current ratings, ` +
         `mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}`,
     },
     shareText: {
       short:
-        `${label}: ${formatInt(watchedFilmsUnique)} watched films, ` +
-        `${formatInt(exactDatedWatchedFilms)} exact-dated watched films, ` +
-        `${formatInt(watchedFilmsWithoutExactDate)} watched films without exact date, ` +
-        `${formatInt(currentRatedFilmCount)} current rated films, ` +
+        `${label}: ${formatInt(watchedFilmsUnique)} watched, ` +
+        `${formatInt(exactDatedWatchedFilms)} with exact watch dates, ` +
+        `${formatInt(watchedFilmsWithoutExactDate)} missing exact watch dates, ` +
+        `${formatInt(currentRatedFilmCount)} with current ratings, ` +
         `mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}`,
       long:
-        `${label} has ${formatInt(watchedFilmsUnique)} watched films, including ` +
-        `${formatInt(exactDatedWatchedFilms)} exact-dated watched films and ` +
-        `${formatInt(watchedFilmsWithoutExactDate)} watched films without exact date. ` +
-        `${formatInt(currentRatedFilmCount)} current rated films and ${formatInt(loggedRatedFilmCount)} logged-rated films. ` +
+        `${label}: ${formatInt(watchedFilmsUnique)} watched films. ` +
+        `${formatInt(exactDatedWatchedFilms)} have exact watch dates; ${formatInt(watchedFilmsWithoutExactDate)} do not. ` +
+        `${formatInt(currentRatedFilmCount)} have current ratings and ${formatInt(loggedRatedFilmCount)} have logged ratings. ` +
         `Current mean ${currentSummary.mean === null ? "n/a" : round3(currentSummary.mean)}, ` +
-        `current median ${currentSummary.median === null ? "n/a" : round1(currentSummary.median)}, ` +
-        `best streak ${formatInt(longestStreakDays)} days on exact watched dates, commitment ${formatPct(commitmentIndex)}. ` +
-        `Badge ${badge}.`,
+        `median ${currentSummary.median === null ? "n/a" : round1(currentSummary.median)}. ` +
+        `Best streak ${formatInt(longestStreakDays)} days. Commitment ${formatPct(commitmentIndex)}. ${badge}.`,
     },
   };
 }

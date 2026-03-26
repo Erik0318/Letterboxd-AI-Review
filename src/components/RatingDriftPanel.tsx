@@ -56,7 +56,7 @@ export default function RatingDriftPanel({
   sort,
   onSortChange,
   maxItems = 10,
-  title = "Rating drift",
+  title = "Rating Drift",
   subtitle,
   onCategoryClick,
   onCaseClick,
@@ -67,8 +67,8 @@ export default function RatingDriftPanel({
   maxItems?: number;
   title?: string;
   subtitle?: string;
-  onCategoryClick?: (category: "comparableFilms" | "unchanged" | "changed" | "upgraded" | "downgraded") => void;
-  onCaseClick?: (item: RatingDriftCase) => void;
+  onCategoryClick?: (category: "comparableFilms" | "unchanged" | "changed" | "upgraded" | "downgraded", sourceElement: HTMLElement | null) => void;
+  onCaseClick?: (item: RatingDriftCase, sourceElement: HTMLElement | null) => void;
 }) {
   const items = drift.lists[sort].slice(0, maxItems);
   const meanDelta = formatMeanDelta(drift.summary.meanDelta.value);
@@ -79,11 +79,11 @@ export default function RatingDriftPanel({
         <div>
           <h2>{title}</h2>
           <div className="small">
-            {subtitle || <>Logged rating = {drift.semantics.loggedRating}. Current rating = {drift.semantics.currentRating}. Delta = {drift.semantics.delta}.</>}
+            {subtitle || <>Logged rating and current rating stay separate. Delta is <code>currentRating - loggedRating</code>.</>}
           </div>
         </div>
         <div>
-          <div className="small">Sort representative cases</div>
+          <div className="small">Order the sample films</div>
           <select value={sort} onChange={(event) => onSortChange(event.target.value as RatingDriftSortKey)}>
             <option value="biggestDowngrade">{SORT_LABELS.biggestDowngrade}</option>
             <option value="biggestUpgrade">{SORT_LABELS.biggestUpgrade}</option>
@@ -93,16 +93,16 @@ export default function RatingDriftPanel({
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
-        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={() => onCategoryClick?.("comparableFilms")} disabled={!onCategoryClick}>Comparable films: {formatInt(drift.summary.comparableFilms.value)}</button>
-        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={() => onCategoryClick?.("unchanged")} disabled={!onCategoryClick}>Unchanged: {formatInt(drift.summary.unchanged.value)}</button>
-        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={() => onCategoryClick?.("changed")} disabled={!onCategoryClick}>Changed: {formatInt(drift.summary.changed.value)}</button>
-        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={() => onCategoryClick?.("upgraded")} disabled={!onCategoryClick}>Upgraded: {formatInt(drift.summary.upgraded.value)}</button>
-        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={() => onCategoryClick?.("downgraded")} disabled={!onCategoryClick}>Downgraded: {formatInt(drift.summary.downgraded.value)}</button>
+        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={(event) => onCategoryClick?.("comparableFilms", event.currentTarget)} disabled={!onCategoryClick}>Comparable: {formatInt(drift.summary.comparableFilms.value)}</button>
+        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={(event) => onCategoryClick?.("unchanged", event.currentTarget)} disabled={!onCategoryClick}>Unchanged: {formatInt(drift.summary.unchanged.value)}</button>
+        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={(event) => onCategoryClick?.("changed", event.currentTarget)} disabled={!onCategoryClick}>Changed: {formatInt(drift.summary.changed.value)}</button>
+        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={(event) => onCategoryClick?.("upgraded", event.currentTarget)} disabled={!onCategoryClick}>Raised: {formatInt(drift.summary.upgraded.value)}</button>
+        <button type="button" className={`badgeButton${onCategoryClick ? " isInteractive" : ""}`} onClick={(event) => onCategoryClick?.("downgraded", event.currentTarget)} disabled={!onCategoryClick}>Lowered: {formatInt(drift.summary.downgraded.value)}</button>
         <span className="badge">Mean delta: {meanDelta}</span>
       </div>
 
       <div className="small" style={{ marginTop: 10 }}>
-        Top changed films for {SORT_LABELS[sort].toLowerCase()}.
+        Sample films for {SORT_LABELS[sort].toLowerCase()}.
       </div>
 
       {items.length === 0 ? (
@@ -118,13 +118,13 @@ export default function RatingDriftPanel({
               <div>Delta</div>
             </div>
             {items.map((item) => (
-              <button
-                type="button"
-                className={`driftRow${onCaseClick ? " dataTableRowButton" : ""}`}
-                key={`${sort}:${item.filmKey}`}
-                onClick={() => onCaseClick?.(item)}
-                disabled={!onCaseClick}
-              >
+                <button
+                  type="button"
+                  className={`driftRow${onCaseClick ? " dataTableRowButton" : ""}`}
+                  key={`${sort}:${item.filmKey}`}
+                  onClick={(event) => onCaseClick?.(item, event.currentTarget)}
+                  disabled={!onCaseClick}
+                >
                 <div className="driftFilm">
                   <div className="driftFilmTitle">{item.name}</div>
                 </div>

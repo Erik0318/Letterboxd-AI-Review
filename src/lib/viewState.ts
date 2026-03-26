@@ -29,37 +29,37 @@ export type CurrentViewSummary = {
 export function buildCurrentViewSummary(input: CurrentViewSummaryInput): CurrentViewSummary {
   const mode = input.drilldown ? "drilldown" : input.scopeIsActive ? "scoped" : "global";
   const contextItems: CurrentViewSummary["contextItems"] = [
-    { label: "Global context", value: "Current imported Letterboxd export" },
-    { label: "Active scope", value: input.scopeIsActive ? input.scopeSummary : "Global default view" },
+    { label: "Report", value: "Current Letterboxd export" },
+    { label: "View", value: input.scopeIsActive ? input.scopeSummary : "Full report" },
   ];
   if (input.activeSavedViewName) {
     contextItems.push({ label: "Saved view", value: input.activeSavedViewName });
   }
   if (input.drilldown) {
-    contextItems.push({ label: "Drilldown", value: `${input.drilldown.title} (${input.drilldown.rowBasis})` });
-    contextItems.push({ label: "Drilldown source", value: input.drilldown.source });
+    contextItems.push({ label: "Detail", value: `${input.drilldown.title} (${input.drilldown.rowBasis})` });
+    contextItems.push({ label: "Opened from", value: input.drilldown.source });
   }
 
   const heading = mode === "drilldown"
-    ? "Current drilldown subset"
+    ? "Open detail"
     : mode === "scoped"
-      ? "Current scoped view"
-      : "Current global report";
+      ? "Filtered view"
+      : "Full report";
 
   const description = mode === "drilldown"
-    ? "Export and copy actions below reflect the open drilldown subset. The share card remains a report-level summary."
+    ? "Copy and export use the open detail. The share card stays at report level."
     : mode === "scoped"
-      ? "Share and export actions below reflect the active scope."
-      : "Share and export actions below reflect the full imported report.";
+      ? "Copy and export follow the current filters."
+      : "Copy and export use the full report.";
 
   const badges = [
-    { label: "Watched films", value: String(input.majorCounts.watchedFilms) },
-    { label: "Current rated films", value: String(input.majorCounts.currentRatedFilms) },
-    { label: "Exact-dated watched films", value: String(input.majorCounts.exactDatedWatchedFilms) },
-    { label: "Watched films without exact date", value: String(input.majorCounts.watchedFilmsWithoutExactDate) },
+    { label: "Watched", value: String(input.majorCounts.watchedFilms) },
+    { label: "Current ratings", value: String(input.majorCounts.currentRatedFilms) },
+    { label: "Exact watch dates", value: String(input.majorCounts.exactDatedWatchedFilms) },
+    { label: "Missing exact watch dates", value: String(input.majorCounts.watchedFilmsWithoutExactDate) },
   ];
   if (input.drilldown) {
-    badges.push({ label: "Drilldown rows", value: String(input.drilldown.rowCount) });
+    badges.push({ label: "Rows", value: String(input.drilldown.rowCount) });
   }
 
   const textParts = [input.shareTextLong];
@@ -68,9 +68,9 @@ export function buildCurrentViewSummary(input: CurrentViewSummaryInput): Current
   }
   if (input.drilldown) {
     textParts.push(
-      `Open drilldown: ${input.drilldown.title}. ` +
-      `Source: ${input.drilldown.source}. ` +
-      `Row basis: ${input.drilldown.rowBasis}. ` +
+      `Open detail: ${input.drilldown.title}. ` +
+      `Opened from: ${input.drilldown.source}. ` +
+      `Counted as: ${input.drilldown.rowBasis}. ` +
       `Rows: ${input.drilldown.rowCount}.`,
     );
   }

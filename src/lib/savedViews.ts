@@ -70,24 +70,24 @@ export function areSavedViewSnapshotsEqual(left: SavedViewSnapshot, right: Saved
 function scopeSummary(scope: AnalysisScope): string {
   const parts: string[] = [];
   if (scope.basis !== DEFAULT_ANALYSIS_SCOPE.basis) {
-    parts.push(`Basis: ${ANALYSIS_SCOPE_BASIS_LABELS[scope.basis]}`);
+    parts.push(`Base: ${ANALYSIS_SCOPE_BASIS_LABELS[scope.basis]}`);
   }
   if (scope.releaseDecade) {
-    parts.push(`Release decade: ${scope.releaseDecade}`);
+    parts.push(`Decade: ${scope.releaseDecade}`);
   }
   if (scope.releaseYearMin !== null || scope.releaseYearMax !== null) {
-    parts.push(`Release year range: ${scope.releaseYearMin ?? "?"} to ${scope.releaseYearMax ?? "?"}`);
+    parts.push(`Years: ${scope.releaseYearMin ?? "?"} to ${scope.releaseYearMax ?? "?"}`);
   }
   if (scope.currentRatingMin !== null || scope.currentRatingMax !== null) {
-    parts.push(`Current rating range: ${scope.currentRatingMin ?? "?"} to ${scope.currentRatingMax ?? "?"}`);
+    parts.push(`Current rating: ${scope.currentRatingMin ?? "?"} to ${scope.currentRatingMax ?? "?"}`);
   }
   if (scope.loggedRatingMin !== null || scope.loggedRatingMax !== null) {
-    parts.push(`Logged rating range: ${scope.loggedRatingMin ?? "?"} to ${scope.loggedRatingMax ?? "?"}`);
+    parts.push(`Logged rating: ${scope.loggedRatingMin ?? "?"} to ${scope.loggedRatingMax ?? "?"}`);
   }
   if (scope.reviewPresence !== DEFAULT_ANALYSIS_SCOPE.reviewPresence) {
-    parts.push(`Review presence: ${scope.reviewPresence === "hasReview" ? "Has review" : "No review"}`);
+    parts.push(`Reviews: ${scope.reviewPresence === "hasReview" ? "With review" : "No review"}`);
   }
-  return parts.join(" | ") || "Global default view";
+  return parts.join(" | ") || "Full report";
 }
 
 function baseSnapshot(scope: AnalysisScope): SavedViewSnapshot {
@@ -103,26 +103,26 @@ function baseSnapshot(scope: AnalysisScope): SavedViewSnapshot {
 export const BUILTIN_SAVED_VIEW_PRESETS: SavedViewPreset[] = [
   {
     id: "preset_all_watched_films",
-    name: "All watched films",
-    description: "Film-level watched universe with no extra filters.",
+    name: "Watched films",
+    description: "The full watched set, with no extra filters.",
     snapshot: baseSnapshot({ ...DEFAULT_ANALYSIS_SCOPE, basis: "watchedFilms" }),
   },
   {
     id: "preset_current_rated_films",
-    name: "Current-rated films",
-    description: "Films that currently have a ratings.csv snapshot.",
+    name: "Current ratings",
+    description: "Films with a current rating in ratings.csv.",
     snapshot: baseSnapshot({ ...DEFAULT_ANALYSIS_SCOPE, basis: "currentRatedFilms" }),
   },
   {
     id: "preset_logged_rated_films",
-    name: "Logged-rated films",
-    description: "Films with a diary/review-era logged rating.",
+    name: "Logged ratings",
+    description: "Films with a rating captured on a diary or review row.",
     snapshot: baseSnapshot({ ...DEFAULT_ANALYSIS_SCOPE, basis: "loggedRatedFilms" }),
   },
   {
     id: "preset_changed_drift_films",
-    name: "Changed drift films",
-    description: "Comparable films whose current rating changed from the logged rating.",
+    name: "Changed ratings",
+    description: "Comparable films where the current and logged ratings differ.",
     snapshot: baseSnapshot({ ...DEFAULT_ANALYSIS_SCOPE, basis: "changedDriftFilms" }),
   },
   {
@@ -133,8 +133,8 @@ export const BUILTIN_SAVED_VIEW_PRESETS: SavedViewPreset[] = [
   },
   {
     id: "preset_exact_dated_watched_films",
-    name: "Exact-dated watched films",
-    description: "Watched films that have at least one exact diary/review watched date.",
+    name: "Exact watch dates",
+    description: "Watched films with at least one exact watch date.",
     snapshot: baseSnapshot({ ...DEFAULT_ANALYSIS_SCOPE, basis: "exactDatedWatchedFilms" }),
   },
 ];
@@ -230,9 +230,9 @@ export function buildSavedViewSummaryText(view: SavedViewRecord | SavedViewPrese
   const scopeText = scopeSummary(view.snapshot.scope);
   return [
     view.name,
-    `Scope: ${scopeText}`,
-    `Drilldown route: ${view.snapshot.explorerRoute || "none"}`,
-    `Rating drift sort: ${view.snapshot.ratingDriftSort}`,
-    `Explorer sort: ${view.snapshot.explorerSortKey} (${view.snapshot.explorerSortDirection})`,
+    `View: ${scopeText}`,
+    `Detail route: ${view.snapshot.explorerRoute || "none"}`,
+    `Drift sort: ${view.snapshot.ratingDriftSort}`,
+    `Detail sort: ${view.snapshot.explorerSortKey} (${view.snapshot.explorerSortDirection})`,
   ].join("\n");
 }

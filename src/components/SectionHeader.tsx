@@ -9,7 +9,7 @@ export default function SectionHeader({
 }) {
   return (
     <div className="sectionHeader">
-      <div className="sectionEyebrow">Section</div>
+      <div className="sectionEyebrow">Start Here</div>
       <h2>{title}</h2>
       {description && <div className="small">{description}</div>}
     </div>

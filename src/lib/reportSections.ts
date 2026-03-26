@@ -37,9 +37,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-overview",
     shortTitle: "Overview",
     title: "Overview",
-    purpose: "Start here for the high-level shape of the current report.",
-    description: "A quick read on watched volume, ratings, coverage, and share/export context before you dive deeper.",
-    whatsInside: ["core KPIs", "coverage facts", "share and export tools"],
+    purpose: "The quick read before the deeper cuts.",
+    description: "Headline counts, coverage notes, and share tools in one place.",
+    whatsInside: ["headline counts", "coverage notes", "share tools"],
     defaultCollapsed: false,
   },
   {
@@ -47,9 +47,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-watched-activity",
     shortTitle: "Activity",
     title: "Watched Activity",
-    purpose: "Explore exact-date watch behaviour, streaks, gaps, and busy periods.",
-    description: "This section stays exact-date only, so films without an exact watched date remain out of the default watch-time visuals.",
-    whatsInside: ["heatmap", "streaks and gaps", "exact-event drilldowns"],
+    purpose: "Where the exact watch dates hold.",
+    description: "Timeline, heatmap, and streaks only use exact watch dates.",
+    whatsInside: ["heatmap", "streaks", "watch-date detail"],
     defaultCollapsed: false,
   },
   {
@@ -57,9 +57,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-ratings",
     shortTitle: "Ratings",
     title: "Ratings",
-    purpose: "Scan your current rating shape and where ratings drifted over time.",
-    description: "Current ratings and logged ratings stay semantically distinct, with drift kept explicit about comparable coverage.",
-    whatsInside: ["current histogram", "drift summary", "case drilldowns"],
+    purpose: "Current ratings on one side, logged ratings on the other.",
+    description: "Drift only shows up where both rating layers exist.",
+    whatsInside: ["current histogram", "drift summary", "film detail"],
     defaultCollapsed: false,
   },
   {
@@ -67,9 +67,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-reviews",
     shortTitle: "Reviews",
     title: "Reviews",
-    purpose: "Check review coverage, writing volume, and notable long-form entries.",
-    description: "Review rows remain row-level while reviewed-film coverage stays separate and clearly labeled.",
-    whatsInside: ["review rate", "length buckets", "longest reviews"],
+    purpose: "How often you wrote, and how much.",
+    description: "Review rows and reviewed films stay separate.",
+    whatsInside: ["coverage", "length bands", "longest pieces"],
     defaultCollapsed: true,
   },
   {
@@ -77,9 +77,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-release",
     shortTitle: "Release",
     title: "Release Analytics",
-    purpose: "See the eras and decades that dominate your watched selection.",
-    description: "Release-year analysis stays film-level, and rating averages only use films that actually have the relevant rating source.",
-    whatsInside: ["top years", "decade spread", "rated-decade tables"],
+    purpose: "The eras your watched films keep returning to.",
+    description: "Counts stay film-level. Means only use films with the matching rating source.",
+    whatsInside: ["top years", "decades", "rated-decade table"],
     defaultCollapsed: true,
   },
   {
@@ -87,9 +87,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-watchlist",
     shortTitle: "Watchlist",
     title: "Watchlist / Backlog",
-    purpose: "Inspect the separate backlog dataset without mixing it into watched totals.",
-    description: "Watchlist add activity remains a separate backlog surface, distinct from watched-film analytics.",
-    whatsInside: ["backlog counts", "add timeline", "watchlist decades"],
+    purpose: "The backlog, kept separate from watched totals.",
+    description: "Watchlist add dates shape this section, not your watch history.",
+    whatsInside: ["watchlist counts", "add timeline", "watchlist decades"],
     defaultCollapsed: true,
   },
   {
@@ -97,9 +97,9 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-archives",
     shortTitle: "Archives",
     title: "Archives / Lists",
-    purpose: "Review parsed lists and archived export surfaces without cluttering the main report.",
-    description: "Archive visibility stays additive and read-only, separate from the core watched/reporting surface.",
-    whatsInside: ["archive counts", "active lists", "archived list metadata"],
+    purpose: "Lists, deleted logs, and other side material.",
+    description: "Read-only context from parsed lists and archive files.",
+    whatsInside: ["archive counts", "lists", "file notes"],
     defaultCollapsed: true,
   },
   {
@@ -107,19 +107,19 @@ export const REPORT_SECTIONS: ReportSectionDefinition[] = [
     anchorId: "section-data-quality",
     shortTitle: "Quality",
     title: "Data Quality",
-    purpose: "Audit what the export can and cannot support across report modules.",
-    description: "Coverage, missing fields, optional tables, and debug state stay aligned with the same canonical selectors as the page.",
-    whatsInside: ["coverage audit", "module readiness", "debug summary"],
+    purpose: "Where the export is strong, and where it goes soft.",
+    description: "Missing dates, optional files, and coverage notes for the whole report.",
+    whatsInside: ["coverage notes", "section readiness", "debug state"],
     defaultCollapsed: true,
   },
   {
     id: "ai",
     anchorId: "section-ai",
     shortTitle: "AI",
-    title: "AI",
-    purpose: "Generate optional AI commentary from the same factual report foundation.",
-    description: "The AI layer is additive only; it reads the report context without changing any underlying analytics.",
-    whatsInside: ["provider settings", "prompt context", "generated commentary"],
+    title: "AI Notes",
+    purpose: "Optional writing from the same report.",
+    description: "It reads the report as-is. It does not change the numbers.",
+    whatsInside: ["settings", "context", "draft"],
     defaultCollapsed: true,
   },
 ];
@@ -237,6 +237,9 @@ export function inferExplorerSectionId(route: string | null): ReportSectionId | 
   if (kind === "releaseAnalyticsDecade") {
     return "release";
   }
+  if (kind === "archiveList") {
+    return "archives";
+  }
   return null;
 }
 
@@ -252,12 +255,12 @@ export function buildDrilldownContextTrail({
   drilldownTitle: string;
 }): Array<{ label: string; value: string }> {
   const items = [
-    { label: "Scope", value: activeScope },
+    { label: "View", value: activeScope },
   ];
   if (sectionId) {
     items.push({ label: "Section", value: getReportSectionTitle(sectionId) });
   }
-  items.push({ label: "Source", value: drilldownSource });
-  items.push({ label: "Drilldown", value: drilldownTitle });
+  items.push({ label: "Opened from", value: drilldownSource });
+  items.push({ label: "Detail", value: drilldownTitle });
   return items;
 }

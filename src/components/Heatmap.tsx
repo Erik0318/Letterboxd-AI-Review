@@ -4,8 +4,8 @@ import { clamp } from "../lib/utils";
 export function Heatmap({
   byMonth,
   title = "Activity heatmap",
-  emptyText = "No dates found in the export.",
-  footerText = "Shows the last 6 years found in your dates.",
+  emptyText = "No dates found.",
+  footerText = "Shows the latest six years in the available dates.",
   subtitle,
   onCellClick,
 }: {
@@ -14,7 +14,7 @@ export function Heatmap({
   emptyText?: string;
   footerText?: string;
   subtitle?: string;
-  onCellClick?: (month: string) => void;
+  onCellClick?: (month: string, sourceElement: HTMLElement | null) => void;
 }) {
   const map = new Map(byMonth.map(m => [m.month, m.count]));
   const months = Array.from(map.keys()).sort();
@@ -48,7 +48,7 @@ export function Heatmap({
                   className={`cell${onCellClick ? " isInteractive" : ""}`}
                   style={cellStyle(c)}
                   title={`${key}: ${c}`}
-                  onClick={() => onCellClick?.(key)}
+                  onClick={(event) => onCellClick?.(key, event.currentTarget)}
                   disabled={!onCellClick}
                 />,
               );

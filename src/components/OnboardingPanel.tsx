@@ -5,31 +5,31 @@ type HelpState = "expanded" | "collapsed" | "dismissed";
 const CONCEPTS = [
   {
     label: "Watched films",
-    text: "Unique films in your watched universe. This stays film-level unless a panel explicitly says rows or events.",
+    text: "Unique films in the watched set. This stays film-level unless a panel says rows or events.",
   },
   {
     label: "Watched rows",
-    text: "Raw watched.csv rows. These can be higher than watched films when the same film appears more than once.",
+    text: "Raw watched.csv rows. They can run higher than watched films when a title appears more than once.",
   },
   {
     label: "Current rating",
-    text: "Your current ratings.csv snapshot for a film right now.",
+    text: "The rating sitting in ratings.csv right now.",
   },
   {
     label: "Logged rating",
-    text: "The rating recorded on the diary/review entry when that watch was logged.",
+    text: "The rating captured on the diary or review row when the watch was logged.",
   },
   {
     label: "Exact watched date",
-    text: "A diary/review watched date that can safely power timelines, heatmaps, and streaks.",
+    text: "A diary or review watch date solid enough for the timeline, heatmap, and streaks.",
   },
   {
     label: "Watched films without exact date",
-    text: "Watched films that still count as watched, but stay out of default watched-time charts because no exact date is present.",
+    text: "They still count as watched films, but they stay out of the default timeline because no exact date is present.",
   },
   {
     label: "Watchlist activity",
-    text: "A separate backlog dataset from watchlist.csv. Watchlist add activity does not change watched totals.",
+    text: "A separate backlog dataset from watchlist.csv. It does not change watched totals.",
   },
 ];
 
@@ -55,14 +55,14 @@ export default function OnboardingPanel({
       <div className={`card${className ? ` ${className}` : ""}`}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h2>How to read this report</h2>
+            <h2>Read this once</h2>
             <div className="small">
-              Short explainers for watched films vs rows, rating layers, exact watched dates, and separate watchlist activity.
+              Short notes on films vs rows, rating layers, exact watch dates, and the separate watchlist.
             </div>
           </div>
           <div className="row">
-            <button className="btn primary" type="button" onClick={onExpand}>Expand help</button>
-            <button className="btn" type="button" onClick={onDismiss}>Dismiss</button>
+            <button className="btn primary" type="button" onClick={onExpand}>Open notes</button>
+            <button className="btn" type="button" onClick={onDismiss}>Hide</button>
           </div>
         </div>
       </div>
@@ -73,14 +73,14 @@ export default function OnboardingPanel({
     <div className={`card${className ? ` ${className}` : ""}`}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h2>How this report reads your export</h2>
+          <h2>How the report reads your export</h2>
           <div className="small">
-            The dashboard keeps film-level totals, row-level counts, exact-date activity, and separate watchlist backlog behavior distinct. Open only the pieces you need.
+            Film totals, row counts, exact watch dates, and watchlist backlog all stay separate. Keep this close if you need a quick reminder.
           </div>
         </div>
         <div className="row">
-          <button className="btn" type="button" onClick={onCollapse}>Collapse</button>
-          <button className="btn" type="button" onClick={onDismiss}>Dismiss</button>
+          <button className="btn" type="button" onClick={onCollapse}>Fold</button>
+          <button className="btn" type="button" onClick={onDismiss}>Hide</button>
         </div>
       </div>
 

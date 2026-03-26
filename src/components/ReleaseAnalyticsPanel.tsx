@@ -8,14 +8,14 @@ function formatMean(value: number | null): string {
 
 export default function ReleaseAnalyticsPanel({
   releaseAnalytics,
-  title = "Release analytics",
+  title = "Release Years",
   subtitle,
   onDecadeClick,
 }: {
   releaseAnalytics: StatPack["releaseAnalytics"];
   title?: string;
   subtitle?: string;
-  onDecadeClick?: (row: StatPack["releaseAnalytics"]["decadeRatings"][number]) => void;
+  onDecadeClick?: (row: StatPack["releaseAnalytics"]["decadeRatings"][number], sourceElement: HTMLElement | null) => void;
 }) {
   const highestCurrent = releaseAnalytics.summary.highestCurrentRatedDecade;
   const highestLogged = releaseAnalytics.summary.highestLoggedRatedDecade;
@@ -24,29 +24,29 @@ export default function ReleaseAnalyticsPanel({
     <div className="card">
       <h2>{title}</h2>
       <div className="small">
-        {subtitle || "Watched distributions stay film-level unique. Rating averages only use films that actually have the relevant rating source."}
+        {subtitle || "Release counts stay film-level. Means only use films with the matching rating source."}
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
         <span className="badge">
-          Highest current-rated decade: {highestCurrent ? `${highestCurrent.decade} (${formatMean(highestCurrent.meanRating)}, n=${formatInt(highestCurrent.ratedFilms)})` : "n/a"}
+          Best current decade: {highestCurrent ? `${highestCurrent.decade} (${formatMean(highestCurrent.meanRating)}, n=${formatInt(highestCurrent.ratedFilms)})` : "n/a"}
         </span>
         <span className="badge">
-          Highest logged-rated decade: {highestLogged ? `${highestLogged.decade} (${formatMean(highestLogged.meanRating)}, n=${formatInt(highestLogged.ratedFilms)})` : "n/a"}
+          Best logged decade: {highestLogged ? `${highestLogged.decade} (${formatMean(highestLogged.meanRating)}, n=${formatInt(highestLogged.ratedFilms)})` : "n/a"}
         </span>
       </div>
 
       {releaseAnalytics.decadeRatings.length === 0 ? (
-        <p>No release decade data found.</p>
+        <p>No release decade data yet.</p>
       ) : (
         <div className="dataTableWrap" style={{ marginTop: 12 }}>
             <div className="dataTable">
               <div className="dataTableHead dataTableRelease">
                 <div>Decade</div>
                 <div>Watched films</div>
-              <div>Current rated films</div>
+              <div>Current ratings</div>
               <div>Current mean</div>
-              <div>Logged-rated films</div>
+              <div>Logged ratings</div>
                 <div>Logged mean</div>
               </div>
               {releaseAnalytics.decadeRatings.map((row) => (
@@ -54,7 +54,7 @@ export default function ReleaseAnalyticsPanel({
                   type="button"
                   className={`dataTableRow dataTableRelease${onDecadeClick ? " dataTableRowButton" : ""}`}
                   key={row.decade}
-                  onClick={() => onDecadeClick?.(row)}
+                  onClick={(event) => onDecadeClick?.(row, event.currentTarget)}
                   disabled={!onDecadeClick}
                 >
                   <div>{row.decade}</div>

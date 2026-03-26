@@ -4,7 +4,7 @@ import { formatInt, formatPct } from "../lib/utils";
 
 export default function BacklogPanel({
   backlog,
-  title = "Backlog / watchlist",
+  title = "Watchlist",
   subtitle,
 }: {
   backlog: StatPack["backlog"];
@@ -15,21 +15,21 @@ export default function BacklogPanel({
     <div className="card">
       <h2>{title}</h2>
       <div className="small">
-        {subtitle || <>Watchlist add timeline uses the add date from <code>watchlist.csv</code>. Counts stay film-level unique unless a badge explicitly says rows.</>}
+        {subtitle || <>This is a separate backlog dataset. Add dates come from <code>watchlist.csv</code>.</>}
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
         <span className="badge">Watchlist films: {formatInt(backlog.summary.watchlistFilms.value)}</span>
         <span className="badge">Watchlist rows: {formatInt(backlog.summary.watchlistRows.value)}</span>
-        <span className="badge">Watchlist films with add date: {formatInt(backlog.summary.watchlistFilmsWithAddDate.value)}</span>
-        <span className="badge">Watchlist films without add date: {formatInt(backlog.summary.watchlistFilmsWithoutAddDate.value)}</span>
+        <span className="badge">With add date: {formatInt(backlog.summary.watchlistFilmsWithAddDate.value)}</span>
+        <span className="badge">Missing add date: {formatInt(backlog.summary.watchlistFilmsWithoutAddDate.value)}</span>
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Watched vs watchlist decade distribution
+        Watched vs watchlist by decade
       </div>
       {backlog.comparison.watchedVsWatchlistByDecade.length === 0 ? (
-        <p>No watched or watchlist decades found.</p>
+        <p>No decade data yet.</p>
       ) : (
         <div className="dataTableWrap">
           <div className="dataTable">

@@ -4,14 +4,14 @@ import { clamp, formatInt, formatPct } from "../lib/utils";
 
 export default function ReviewStatsPanel({
   reviews,
-  title = "Review stats",
+  title = "Reviews",
   subtitle,
   onLongestReviewClick,
 }: {
   reviews: StatPack["reviews"];
   title?: string;
   subtitle?: string;
-  onLongestReviewClick?: (row: StatPack["reviews"]["longestReviews"][number]) => void;
+  onLongestReviewClick?: (row: StatPack["reviews"]["longestReviews"][number], sourceElement: HTMLElement | null) => void;
 }) {
   const maxBucket = Math.max(1, ...reviews.lengthBuckets.map((bucket) => bucket.count));
 
@@ -19,24 +19,24 @@ export default function ReviewStatsPanel({
     <div className="card">
       <h2>{title}</h2>
       <div className="small">
-        {subtitle || <>Review rows and reviewed films come from <code>reviews.csv</code>. Length stats use review rows with non-empty review text.</>}
+        {subtitle || <>Review rows and reviewed films stay separate. Length stats use rows with actual review text.</>}
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
         <span className="badge">Review rows: {formatInt(reviews.summary.reviewRows.value)}</span>
-        <span className="badge">Review text rows: {formatInt(reviews.summary.reviewTextRows.value)}</span>
+        <span className="badge">Rows with text: {formatInt(reviews.summary.reviewTextRows.value)}</span>
         <span className="badge">Reviewed films: {formatInt(reviews.summary.reviewedFilms.value)}</span>
         <span className="badge">{reviews.summary.reviewRate.label}: {formatPct(reviews.summary.reviewRate.value)}</span>
-        <span className="badge">Average review length: {reviews.summary.averageReviewLength.value === null ? "n/a" : formatInt(Math.round(reviews.summary.averageReviewLength.value))}</span>
-        <span className="badge">Median review length: {reviews.summary.medianReviewLength.value === null ? "n/a" : formatInt(Math.round(reviews.summary.medianReviewLength.value))}</span>
-        <span className="badge">Longest review length: {formatInt(reviews.summary.longestReviewLength.value)}</span>
+        <span className="badge">Average length: {reviews.summary.averageReviewLength.value === null ? "n/a" : formatInt(Math.round(reviews.summary.averageReviewLength.value))}</span>
+        <span className="badge">Median length: {reviews.summary.medianReviewLength.value === null ? "n/a" : formatInt(Math.round(reviews.summary.medianReviewLength.value))}</span>
+        <span className="badge">Longest piece: {formatInt(reviews.summary.longestReviewLength.value)}</span>
       </div>
 
       <div className="moduleSplit">
         <div>
-          <div className="small" style={{ marginTop: 12 }}>Review length buckets (review text rows)</div>
+          <div className="small" style={{ marginTop: 12 }}>Length bands</div>
           {reviews.lengthBuckets.every((bucket) => bucket.count === 0) ? (
-            <p>No review text found.</p>
+            <p>No review text yet.</p>
           ) : (
             <div style={{ marginTop: 6 }}>
               {reviews.lengthBuckets.map((bucket) => {
@@ -54,7 +54,7 @@ export default function ReviewStatsPanel({
 
           {reviews.topWords.length > 0 && (
             <>
-              <div className="small" style={{ marginTop: 12 }}>Top review words</div>
+              <div className="small" style={{ marginTop: 12 }}>Top words</div>
               <div className="row" style={{ marginTop: 8 }}>
                 {reviews.topWords.map((word) => (
                   <span className="badge" key={word.word}>
@@ -67,9 +67,9 @@ export default function ReviewStatsPanel({
         </div>
 
         <div>
-          <div className="small" style={{ marginTop: 12 }}>Longest reviews</div>
+          <div className="small" style={{ marginTop: 12 }}>Longest pieces</div>
           {reviews.longestReviews.length === 0 ? (
-            <p>No review text found.</p>
+            <p>No review text yet.</p>
           ) : (
             <div className="dataTableWrap">
               <div className="dataTable">
@@ -83,7 +83,7 @@ export default function ReviewStatsPanel({
                     type="button"
                     className={`dataTableRow dataTableReviews${onLongestReviewClick ? " dataTableRowButton" : ""}`}
                     key={row.id}
-                    onClick={() => onLongestReviewClick?.(row)}
+                    onClick={(event) => onLongestReviewClick?.(row, event.currentTarget)}
                     disabled={!onLongestReviewClick}
                   >
                     <div className="dataEllipsis">{row.name}</div>

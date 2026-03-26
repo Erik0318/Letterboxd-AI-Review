@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo } from "react";
+import { ParsedListFile } from "../lib/letterboxd";
 import { StatPack } from "../lib/stats";
 import { formatInt } from "../lib/utils";
 
@@ -14,18 +15,32 @@ function formatScope(scope: "active" | "deleted" | "orphaned"): string {
 
 export default function ArchiveListsPanel({
   archives,
-  title = "Archive + lists",
+  lists,
+  title = "Lists & Archive",
   subtitle,
+  onListClick,
 }: {
   archives: StatPack["archives"];
+  lists: ParsedListFile[];
   title?: string;
   subtitle?: string;
+  onListClick?: (list: ParsedListFile, sourceElement: HTMLElement | null) => void;
 }) {
+  const visibleLists = useMemo(
+    () => lists
+      .filter((list) => list.scope !== "deleted")
+      .sort((left, right) =>
+        left.scope.localeCompare(right.scope)
+        || (left.metadata.title || "").localeCompare(right.metadata.title || "")
+        || left.path.localeCompare(right.path)),
+    [lists],
+  );
+
   return (
     <div className="card">
       <h2>{title}</h2>
       <div className="small">
-        {subtitle || "Read-only visibility into deleted/orphaned exports and parsed list files. Missing archive files simply stay at zero."}
+        {subtitle || "Read-only context from parsed lists and archive files. Missing files just stay at zero."}
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
@@ -37,62 +52,95 @@ export default function ArchiveListsPanel({
         <span className="badge">Archived lists: {formatInt(archives.summary.archivedLists.value)}</span>
       </div>
 
-      <div className="moduleSplit">
-        <div>
+      <div className="archiveLayout">
+        <div className="archiveBlock">
           <div className="small" style={{ marginTop: 12 }}>Archive summary</div>
-          <div className="dataTableWrap">
-            <div className="dataTable">
-              <div className="dataTableHead dataTableArchive">
-                <div>Scope</div>
-                <div>Diary rows</div>
-                <div>Review rows</div>
-                <div>Comment rows</div>
-                <div>List files</div>
-                <div>Unique films</div>
-              </div>
-              {archives.archiveScopes.map((scope) => (
-                <div className="dataTableRow dataTableArchive" key={scope.scope}>
-                  <div>{scope.scope}</div>
-                  <div>{formatInt(scope.diaryRows)}</div>
-                  <div>{formatInt(scope.reviewRows)}</div>
-                  <div>{formatInt(scope.commentRows)}</div>
-                  <div>{formatInt(scope.listFiles)}</div>
-                  <div>{formatInt(scope.uniqueFilmCount)}</div>
+          <div className="archiveScopeGrid">
+            {archives.archiveScopes.map((scope) => (
+              <div className="archiveScopeCard" key={scope.scope}>
+                <div className="archiveScopeHeader">
+                  <div>
+                    <div className="archiveScopeTitle">{formatScope(scope.scope)}</div>
+                    <div className="small">Rows and files found in this archive slice.</div>
+                  </div>
+                  <span className="badge">{formatInt(scope.uniqueFilmCount)} films</span>
                 </div>
-              ))}
-            </div>
+
+                <div className="archiveStatGrid">
+                  <div className="archiveStatCard">
+                    <div className="small">Diary rows</div>
+                    <div className="archiveStatValue">{formatInt(scope.diaryRows)}</div>
+                  </div>
+                  <div className="archiveStatCard">
+                    <div className="small">Review rows</div>
+                    <div className="archiveStatValue">{formatInt(scope.reviewRows)}</div>
+                  </div>
+                  <div className="archiveStatCard">
+                    <div className="small">Comment rows</div>
+                    <div className="archiveStatValue">{formatInt(scope.commentRows)}</div>
+                  </div>
+                  <div className="archiveStatCard">
+                    <div className="small">List files</div>
+                    <div className="archiveStatValue">{formatInt(scope.listFiles)}</div>
+                  </div>
+                  <div className="archiveStatCard">
+                    <div className="small">Unique films</div>
+                    <div className="archiveStatValue">{formatInt(scope.uniqueFilmCount)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div>
+        <div className="archiveBlock">
           <div className="small" style={{ marginTop: 12 }}>Parsed lists</div>
-          {archives.lists.length === 0 ? (
-            <p>No list exports found.</p>
+          {visibleLists.length === 0 ? (
+            <p>No visible list exports found.</p>
           ) : (
-            <div className="dataTableWrap">
-              <div className="dataTable">
-                <div className="dataTableHead dataTableLists">
-                  <div>List</div>
-                  <div>Status</div>
-                  <div>Items</div>
-                  <div>Metadata</div>
-                </div>
-                {archives.lists.slice(0, 12).map((list) => (
-                  <div className="dataTableRow dataTableLists" key={list.path}>
-                    <div className="dataEllipsis">{list.title || list.path}</div>
-                    <div>{formatScope(list.scope)}</div>
-                    <div>{formatInt(list.itemCount)}</div>
-                    <div className="dataEllipsis">
-                      {[
-                        list.createdDate ? `created ${list.createdDate}` : null,
-                        list.exportedDate ? `exported ${list.exportedDate}` : null,
-                        list.tags.length ? `tags: ${list.tags.join(", ")}` : null,
-                        list.parseError ? `parse issue: ${list.parseError}` : null,
-                      ].filter(Boolean).join(" | ") || "n/a"}
+            <div className="archiveListStack">
+              {visibleLists.slice(0, 12).map((list) => {
+                const metadataBits = [
+                  list.metadata.createdDate ? `created ${list.metadata.createdDate}` : null,
+                  list.metadata.exportedDate ? `exported ${list.metadata.exportedDate}` : null,
+                ].filter(Boolean) as string[];
+
+                return (
+                  <button
+                    type="button"
+                    className={`archiveListCard archiveListCardButton${onListClick ? " isInteractive" : ""}`}
+                    key={list.path}
+                    onClick={(event) => onListClick?.(list, event.currentTarget)}
+                    disabled={!onListClick}
+                  >
+                    <div className="archiveListHeader">
+                      <div className="archiveListTitleBlock">
+                        <div className="archiveListTitle">{list.metadata.title || list.path}</div>
+                        {list.metadata.title && <div className="archiveListPath">{list.path}</div>}
+                      </div>
+
+                      <span className="badge">{formatScope(list.scope)}</span>
+
+                      <div className="archiveListCount">
+                        <div className="small">Items</div>
+                        <div className="archiveListCountValue">{formatInt(list.items.length)}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+
+                    <div className="archiveListMeta">
+                      {metadataBits.length > 0 ? metadataBits.map((bit) => (
+                        <span className="badge" key={`${list.path}:${bit}`}>{bit}</span>
+                      )) : <span className="small">No export metadata</span>}
+                      {list.metadata.tags.length > 0 && (
+                        <div className="archiveMetaText">tags: {list.metadata.tags.join(", ")}</div>
+                      )}
+                      {list.parseError && (
+                        <div className="archiveMetaText">parse issue: {list.parseError}</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

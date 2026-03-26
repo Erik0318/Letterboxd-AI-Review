@@ -8,9 +8,14 @@ const ReportSection = forwardRef<HTMLElement, {
   collapsed: boolean;
   revealed: boolean;
   linkedToExplorer: boolean;
+  attentive: boolean;
+  entered: boolean;
+  guided: boolean;
   metrics: ReportMenuMetric[];
   onToggle: () => void;
   onJumpToMenu: () => void;
+  onPointerEnter?: () => void;
+  onPointerLeave?: () => void;
   children: React.ReactNode;
 }>(
   ({
@@ -20,48 +25,57 @@ const ReportSection = forwardRef<HTMLElement, {
     collapsed,
     revealed,
     linkedToExplorer,
+    attentive,
+    entered,
+    guided,
     metrics,
     onToggle,
     onJumpToMenu,
+    onPointerEnter,
+    onPointerLeave,
     children,
   }, ref) => (
     <section
-      className={`dashboardSection reportSectionShell${active ? " isActive" : ""}${collapsed ? " isCollapsed" : ""}${revealed ? " isVisible" : ""}${linkedToExplorer ? " isLinkedToExplorer" : ""}`}
+      className={`dashboardSection reportSectionShell${active ? " isActive" : ""}${collapsed ? " isCollapsed" : ""}${revealed ? " isVisible" : ""}${linkedToExplorer ? " isLinkedToExplorer" : ""}${attentive ? " isAttentive" : ""}${entered ? " isEntered" : ""}${guided ? " isGuided" : ""}`}
       id={section.anchorId}
       ref={ref}
       data-section={section.id}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
     >
       <div className="reportSectionFrame">
         <header className="reportSectionHeader">
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <div className="sectionEyebrow">Section {String(index + 1).padStart(2, "0")}</div>
-              <h2>{section.title}</h2>
-              <div className="small">{section.description}</div>
-            </div>
-            <div className="reportSectionActions">
-              {active && <span className="badge">Active</span>}
-              {linkedToExplorer && <span className="badge">Open drilldown linked</span>}
-              <button className="btn" type="button" onClick={onJumpToMenu}>Back to menu</button>
-              <button
-                className="btn primary"
-                type="button"
-                onClick={onToggle}
-                aria-expanded={!collapsed}
-                aria-controls={`${section.anchorId}-body`}
-              >
-                {collapsed ? "Expand section" : "Collapse section"}
-              </button>
+          <div className="reportSectionLead">
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div className="sectionEyebrow">Section {String(index + 1).padStart(2, "0")}</div>
+                <h2>{section.title}</h2>
+                <div className="small">{section.description}</div>
+              </div>
+              <div className="reportSectionActions">
+                {active && <span className="badge">Active</span>}
+                {linkedToExplorer && <span className="badge">Detail open</span>}
+                <button className="btn" type="button" onClick={onJumpToMenu}>Back to map</button>
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={onToggle}
+                  aria-expanded={!collapsed}
+                  aria-controls={`${section.anchorId}-body`}
+                >
+                  {collapsed ? "Open section" : "Fold section"}
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="reportSectionLanding">
             <div className="reportSectionLandingBlock">
-              <div className="small">What this section is for</div>
+              <div className="small">Why it matters</div>
               <div className="reportSectionPurpose">{section.purpose}</div>
             </div>
             <div className="reportSectionLandingBlock">
-              <div className="small">What's inside</div>
+              <div className="small">Inside</div>
               <div className="reportSectionInside">
                 {section.whatsInside.map((item) => (
                   <span className="badge" key={`${section.id}:${item}`}>{item}</span>
@@ -69,7 +83,7 @@ const ReportSection = forwardRef<HTMLElement, {
               </div>
             </div>
             <div className="reportSectionLandingBlock">
-              <div className="small">Quick preview</div>
+              <div className="small">At a glance</div>
               <div className="reportSectionMetrics">
                 {metrics.length > 0 ? metrics.map((metric) => (
                   <div className="reportSectionMetric" key={`${section.id}:${metric.label}`}>
@@ -78,7 +92,7 @@ const ReportSection = forwardRef<HTMLElement, {
                   </div>
                 )) : (
                   <div className="reportSectionMetric">
-                    <div className="small">Preview</div>
+                    <div className="small">Ready</div>
                     <div>Open section</div>
                   </div>
                 )}
@@ -93,7 +107,7 @@ const ReportSection = forwardRef<HTMLElement, {
               <>
                 {children}
                 <div className="reportSectionFooter">
-                  <button className="btn" type="button" onClick={onJumpToMenu}>Back to report map</button>
+                  <button className="btn" type="button" onClick={onJumpToMenu}>Back to map</button>
                 </div>
               </>
             )}

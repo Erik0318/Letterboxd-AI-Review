@@ -4,14 +4,14 @@ import { clamp, formatInt } from "../lib/utils";
 export function BarList({
   title,
   items,
-  emptyText = "No data.",
+  emptyText = "Nothing here yet.",
   onItemClick,
   subtitle,
 }: {
   title: string;
   items: Array<{ label: string; value: number }>;
   emptyText?: string;
-  onItemClick?: (item: { label: string; value: number }) => void;
+  onItemClick?: (item: { label: string; value: number }, sourceElement: HTMLElement | null) => void;
   subtitle?: string;
 }) {
   const max = Math.max(1, ...items.map(i => i.value));
@@ -30,7 +30,7 @@ export function BarList({
                 key={it.label}
                 type="button"
                 className={`barRowButton${onItemClick ? " isInteractive" : ""}`}
-                onClick={() => onItemClick?.(it)}
+                onClick={(event) => onItemClick?.(it, event.currentTarget)}
                 disabled={!onItemClick}
               >
                 <div className="small">{it.label}</div>

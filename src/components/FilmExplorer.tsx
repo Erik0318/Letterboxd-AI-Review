@@ -19,6 +19,14 @@ type ExplorerColumn = {
   sortValue: (row: ExplorerRow) => string | number | boolean | null;
 };
 
+type ExplorerOrigin = {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  token: number;
+} | null;
+
 function compareNullable(
   left: string | number | boolean | null,
   right: string | number | boolean | null,
@@ -112,6 +120,7 @@ export default function FilmExplorer({
   payload,
   sortKey,
   direction,
+  origin,
   sourceSectionId,
   sourceSectionTitle,
   contextTrail,
@@ -123,6 +132,7 @@ export default function FilmExplorer({
   payload: FilmExplorerPayload | null;
   sortKey: string;
   direction: ExplorerSortDirection;
+  origin: ExplorerOrigin;
   sourceSectionId: string | null;
   sourceSectionTitle: string | null;
   contextTrail: Array<{ label: string; value: string }>;
@@ -135,7 +145,9 @@ export default function FilmExplorer({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [renderedPayload, setRenderedPayload] = useState<FilmExplorerPayload | null>(payload);
   const [stage, setStage] = useState<"closed" | "opening" | "open" | "closing">(payload ? "open" : "closed");
+  const [originMotion, setOriginMotion] = useState<{ dx: number; dy: number; scaleX: number; scaleY: number } | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(search);
   const displayPayload = payload || renderedPayload;
 
@@ -181,6 +193,19 @@ export default function FilmExplorer({
       closeButtonRef.current?.focus();
     }
   }, [stage]);
+
+  useEffect(() => {
+    if (!displayPayload || !origin || !panelRef.current) {
+      setOriginMotion(null);
+      return;
+    }
+    const rect = panelRef.current.getBoundingClientRect();
+    const dx = origin.centerX - (rect.left + rect.width / 2);
+    const dy = origin.centerY - (rect.top + rect.height / 2);
+    const scaleX = Math.min(0.96, Math.max(0.24, origin.width / Math.max(rect.width, 1)));
+    const scaleY = Math.min(0.92, Math.max(0.18, origin.height / Math.max(rect.height, 1)));
+    setOriginMotion({ dx, dy, scaleX, scaleY });
+  }, [displayPayload, origin, origin?.token, stage]);
 
   const columns = useMemo(() => {
     if (!displayPayload) {
@@ -267,22 +292,38 @@ export default function FilmExplorer({
     return null;
   }
 
+  const motionStyle = originMotion ? {
+    "--explorer-origin-dx": `${originMotion.dx}px`,
+    "--explorer-origin-dy": `${originMotion.dy}px`,
+    "--explorer-origin-scale-x": String(originMotion.scaleX),
+    "--explorer-origin-scale-y": String(originMotion.scaleY),
+    "--explorer-origin-x": `${origin?.centerX ?? 0}px`,
+    "--explorer-origin-y": `${origin?.centerY ?? 0}px`,
+    "--explorer-origin-width": `${origin?.width ?? 0}px`,
+    "--explorer-origin-height": `${origin?.height ?? 0}px`,
+  } as React.CSSProperties : undefined;
+
   return (
     <div
-      className={`explorerOverlay is${stage[0].toUpperCase()}${stage.slice(1)}`}
+      className={`explorerOverlay is${stage[0].toUpperCase()}${stage.slice(1)}${originMotion ? " hasOrigin" : ""}`}
       data-section={sourceSectionId || undefined}
       role="dialog"
       aria-modal="true"
       aria-labelledby="explorer-title"
+      style={motionStyle}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
         }
       }}
     >
-      <div className={`explorerPanel is${stage[0].toUpperCase()}${stage.slice(1)}`} data-section={sourceSectionId || undefined}>
+      <div
+        className={`explorerPanel is${stage[0].toUpperCase()}${stage.slice(1)}`}
+        data-section={sourceSectionId || undefined}
+        ref={panelRef}
+      >
         {contextTrail.length > 0 && (
-          <div className="explorerTrail" aria-label="Drilldown context">
+          <div className="explorerTrail" aria-label="Detail context">
             {contextTrail.map((item) => (
               <span className="badge" key={`${item.label}:${item.value}`}>{item.label}: {item.value}</span>
             ))}
@@ -293,37 +334,37 @@ export default function FilmExplorer({
           <div>
             <div className="row" style={{ gap: 8 }}>
               {sourceSectionTitle && <span className="badge">From {sourceSectionTitle}</span>}
-              <span className="badge">Row basis: {displayPayload.context.rowBasis}</span>
+              <span className="badge">Counted as: {displayPayload.context.rowBasis}</span>
             </div>
             <h2 id="explorer-title">{displayPayload.title}</h2>
             <div className="small">{displayPayload.subtitle}</div>
           </div>
-          <button className="btn danger" type="button" onClick={onClose} ref={closeButtonRef}>Close</button>
+          <button className="btn danger" type="button" onClick={onClose} ref={closeButtonRef}>Close detail</button>
         </div>
 
         <div className="explorerSummary">
           <div className="explorerSummaryRow">
-            <div className="small">Global context</div>
+            <div className="small">Report</div>
             <div>{displayPayload.context.globalContext}</div>
           </div>
           <div className="explorerSummaryRow">
-            <div className="small">Active scope</div>
+            <div className="small">View</div>
             <div>{displayPayload.context.activeScope}</div>
           </div>
           <div className="explorerSummaryRow">
-            <div className="small">Drilldown source</div>
+            <div className="small">Opened from</div>
             <div>{displayPayload.context.drilldownSource}</div>
           </div>
           <div className="explorerSummaryRow">
-            <div className="small">Current sort</div>
+            <div className="small">Sort</div>
             <div>{sortLabel(columns, sortKey, direction)}</div>
           </div>
           <div className="explorerSummaryRow">
-            <div className="small">Visible rows</div>
+            <div className="small">Shown</div>
             <div>{formatInt(filteredRows.length)}</div>
           </div>
           <div className="explorerSummaryRow">
-            <div className="small">Selected rows</div>
+            <div className="small">Selected</div>
             <div>{formatInt(selectedCount)}</div>
           </div>
         </div>
@@ -331,7 +372,7 @@ export default function FilmExplorer({
         <div className="explorerToolbar">
           <label>
             <div className="small">Search</div>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, year, or exact date" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, year, or date" />
           </label>
           <label>
             <div className="small">Sort by</div>
@@ -353,7 +394,7 @@ export default function FilmExplorer({
           </label>
           <div className="row explorerToolbarActions">
             <span className="badge">Selected: {formatInt(selectedCount)}</span>
-            <button className="btn" type="button" onClick={copySelectedTitles}>Copy selected titles</button>
+            <button className="btn" type="button" onClick={copySelectedTitles}>Copy titles</button>
             <button
               className="btn primary"
               type="button"
@@ -374,12 +415,12 @@ export default function FilmExplorer({
           <div className="explorerEmptyState">
             <h3>{displayPayload.context.emptyTitle}</h3>
             <p>{displayPayload.context.emptyBody}</p>
-            {sourceSectionTitle && <div className="small">This drilldown was opened from {sourceSectionTitle}.</div>}
+            {sourceSectionTitle && <div className="small">This detail came from {sourceSectionTitle}.</div>}
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="explorerEmptyState">
-            <h3>No rows match the current explorer filters</h3>
-            <p>The underlying drilldown still exists, but the current search text removed every visible row.</p>
+            <h3>Nothing matches this search</h3>
+            <p>The detail is still here. The current search just hides every row.</p>
             <button className="btn" type="button" onClick={() => setSearch("")}>Clear search</button>
           </div>
         ) : (
@@ -419,7 +460,7 @@ export default function FilmExplorer({
                   ))}
                   <div>
                     {row.filmUrl ? (
-                      <a className="explorerLink" href={row.filmUrl} target="_blank" rel="noreferrer">Open</a>
+                      <a className="explorerLink" href={row.filmUrl} target="_blank" rel="noreferrer">Letterboxd</a>
                     ) : (
                       <span className="small">n/a</span>
                     )}
