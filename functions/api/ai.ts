@@ -3,7 +3,9 @@ export interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_API_KEY2?: string;
   OPENAI_BASE_URL?: string;
+  OPENAI_BASE_URL2?: string;
   OPENAI_MODEL?: string;
+  OPENAI_MODEL2?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   AI_DAILY_LIMIT?: string;
@@ -65,7 +67,7 @@ function buildPrompt(body: Body): { system: string; user: string } {
   const mode = body.mode || "roast";
   const level = body.roastLevel || 2;
   const strictness = mode === "roast"
-    ? (level === 1 ? "mild and playful" : level === 2 ? "sharp and witty" : "aggressive and brutal")
+    ? (level === 1 ? "mild and playful. only a bit sarcastic" : level === 2 ? "sharp and witty" : "aggressive and brutal. u can use any words including swear words to make it hurt more")
     : (level === 1 ? "warm and encouraging" : level === 2 ? "enthusiastic and vivid" : "extremely enthusiastic and over-the-top");
 
   const system =
@@ -75,7 +77,7 @@ function buildPrompt(body: Body): { system: string; user: string } {
     `Every movie title you mention must stay in English exactly as given in the profile. Never translate or localize film titles. ` +
     `Use concrete references to the profile's patterns and representative titles (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
     `Treat the payload as already curated: do not ask for raw rows or missing data. ` +
-    `Structure: (A) 1 short title line, (B) 3 to 5 compact paragraphs speaking directly to the user, (C) 8 separate recommendation lines formatted as "Movie Title - reason" with no bullets or numbering.`;
+    `Structure: (A) 1 short title line, (B) some compact paragraphs speaking directly to the user, (C) 8 separate recommendation lines formatted as "Movie Title - reason" with no bullets or numbering.`;
 
   const user = `Compact Letterboxd taste profile JSON:\n${JSON.stringify(body.profile || {})}`;
   return { system, user };
@@ -162,8 +164,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     } else if (provider === "default_kimi") {
       const apiKey = ctx.env.OPENAI_API_KEY2;
       if (!apiKey) throw new Error("Missing built-in Kimi API key (OPENAI_API_KEY2).");
-      const baseUrl = "https://api.moonshot.cn";
-      const model = "kimi-k2.5";
+      const baseUrl = ctx.env.OPENAI_BASE_URL2 || "https://api.moonshot.cn/v1";
+      const model = ctx.env.OPENAI_MODEL2 || "kimi-k2.5";
       usedProvider = "default_kimi";
       usedModel = model;
       text = await callOpenAICompat({ apiKey, baseUrl, model, system, user });
