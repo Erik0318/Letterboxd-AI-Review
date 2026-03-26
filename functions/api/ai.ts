@@ -226,6 +226,73 @@ function buildMinimalKimiProfile(profile: unknown): unknown {
   };
 }
 
+function extractTextFromContentPart(part: unknown): string {
+  if (typeof part === "string") {
+    return part;
+  }
+  if (!part || typeof part !== "object") {
+    return "";
+  }
+
+  const record = part as Record<string, unknown>;
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  if (record.text && typeof record.text === "object" && typeof (record.text as Record<string, unknown>).value === "string") {
+    return String((record.text as Record<string, unknown>).value);
+  }
+  if (typeof record.content === "string") {
+    return record.content;
+  }
+  return "";
+}
+
+function extractOpenAICompatText(data: any): string {
+  const messageContent = data?.choices?.[0]?.message?.content;
+  if (typeof messageContent === "string") {
+    return messageContent;
+  }
+  if (Array.isArray(messageContent)) {
+    return messageContent.map(extractTextFromContentPart).filter(Boolean).join("").trim();
+  }
+
+  const legacyText = data?.choices?.[0]?.text;
+  if (typeof legacyText === "string") {
+    return legacyText;
+  }
+
+  const outputText = data?.output_text;
+  if (typeof outputText === "string") {
+    return outputText;
+  }
+
+  return "";
+}
+
+function extractOpenAICompatRefusal(data: any): string {
+  const refusal = data?.choices?.[0]?.message?.refusal;
+  if (typeof refusal === "string") {
+    return refusal;
+  }
+  if (Array.isArray(refusal)) {
+    return refusal.map(extractTextFromContentPart).filter(Boolean).join("").trim();
+  }
+  return "";
+}
+
+function describeOpenAICompatSuccess(data: any, raw: string): string {
+  const choice = data?.choices?.[0];
+  const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : "";
+  const message = choice?.message && typeof choice.message === "object" ? choice.message as Record<string, unknown> : null;
+  const messageKeys = message ? Object.keys(message).join(", ") : "";
+  const summaryBits = [
+    finishReason ? `finish_reason=${finishReason}` : "",
+    messageKeys ? `message_fields=${messageKeys}` : "",
+    raw ? `body=${summarizeUpstreamError(raw, "")}` : "",
+  ].filter(Boolean);
+  return summaryBits.join(" | ");
+}
+
 async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: string; system: string; user: string; temperature?: number; maxTokens?: number; }): Promise<string> {
   const url = normalizeBaseUrl(args.baseUrl) + "/v1/chat/completions";
   const payload: Record<string, unknown> = {
@@ -261,9 +328,16 @@ async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: 
     const message = jsonMessage || summarizeUpstreamError(raw, `OpenAI compatible error (${res.status})`);
     throw new UpstreamError(message, res.status, url);
   }
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error("No text in model response.");
-  return cleanPlainTextOutput(String(text));
+  const text = extractOpenAICompatText(data);
+  if (text) {
+    return cleanPlainTextOutput(String(text));
+  }
+  const refusal = extractOpenAICompatRefusal(data);
+  if (refusal) {
+    throw new Error(cleanPlainTextOutput(refusal));
+  }
+  const diagnostic = describeOpenAICompatSuccess(data, raw);
+  throw new Error(diagnostic ? `No text in model response. ${diagnostic}` : "No text in model response.");
 }
 
 async function callGemini(args: { apiKey: string; model: string; system: string; user: string; }): Promise<string> {
