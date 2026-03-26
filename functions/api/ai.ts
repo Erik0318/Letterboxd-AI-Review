@@ -46,6 +46,16 @@ class UpstreamError extends Error {
   }
 }
 
+class ModelOutputTruncatedError extends Error {
+  url: string;
+
+  constructor(message: string, url: string) {
+    super(message);
+    this.name = "ModelOutputTruncatedError";
+    this.url = url;
+  }
+}
+
 function getIp(req: Request): string {
   return req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
 }
@@ -93,7 +103,8 @@ function buildPrompt(body: Body, variant: PromptVariant = "default"): { system: 
       `Hard rules: plain text only. No markdown, no headings, no bullet markers, no numbered list markers, no asterisks. ` +
       `Keep every movie title in English exactly as given in the profile. Never translate film titles. ` +
       `Use the profile directly. Do not ask for more data. ` +
-      `Keep it concise and stable: (A) 1 short title line, (B) 2 to 4 compact paragraphs, (C) 8 recommendation lines in the format "Movie Title - reason".`
+      `Keep it concise and stable: (A) 1 short title line, (B) 2 to 4 compact paragraphs, (C) 8 recommendation lines in the format "Movie Title - reason". ` +
+      `Prioritize giving the final answer directly and keep internal reasoning brief.`
     : `You are writing a direct film-friend style monologue to the user from a compact Letterboxd taste profile. ` +
       `Output ONLY in ${language}. Mode=${mode}. Tone=${strictness}. ` +
       `Hard rules: plain text only. No markdown headings, no numbered template, no bullet markers, no asterisks, no bold markers, no system-style wording, no fluff. ` +
@@ -132,6 +143,11 @@ function summarizeUpstreamError(raw: string, fallback: string): string {
     return fallback;
   }
   return cleaned.slice(0, 240);
+}
+
+function isRetryableKimiError(error: unknown): boolean {
+  return (error instanceof UpstreamError && error.status >= 500)
+    || error instanceof ModelOutputTruncatedError;
 }
 
 function buildKimiFallbackProfile(profile: unknown): unknown {
@@ -280,7 +296,18 @@ function extractOpenAICompatRefusal(data: any): string {
   return "";
 }
 
-function describeOpenAICompatSuccess(data: any, raw: string): string {
+function hasOpenAICompatReasoning(data: any): boolean {
+  const reasoning = data?.choices?.[0]?.message?.reasoning_content;
+  if (typeof reasoning === "string") {
+    return reasoning.trim().length > 0;
+  }
+  if (Array.isArray(reasoning)) {
+    return reasoning.map(extractTextFromContentPart).join("").trim().length > 0;
+  }
+  return false;
+}
+
+function describeOpenAICompatSuccess(data: any): string {
   const choice = data?.choices?.[0];
   const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : "";
   const message = choice?.message && typeof choice.message === "object" ? choice.message as Record<string, unknown> : null;
@@ -288,7 +315,6 @@ function describeOpenAICompatSuccess(data: any, raw: string): string {
   const summaryBits = [
     finishReason ? `finish_reason=${finishReason}` : "",
     messageKeys ? `message_fields=${messageKeys}` : "",
-    raw ? `body=${summarizeUpstreamError(raw, "")}` : "",
   ].filter(Boolean);
   return summaryBits.join(" | ");
 }
@@ -336,7 +362,11 @@ async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: 
   if (refusal) {
     throw new Error(cleanPlainTextOutput(refusal));
   }
-  const diagnostic = describeOpenAICompatSuccess(data, raw);
+  const finishReason = typeof data?.choices?.[0]?.finish_reason === "string" ? data.choices[0].finish_reason : "";
+  if (finishReason === "length" && hasOpenAICompatReasoning(data)) {
+    throw new ModelOutputTruncatedError("Model used its output budget on reasoning before the final answer.", url);
+  }
+  const diagnostic = describeOpenAICompatSuccess(data);
   throw new Error(diagnostic ? `No text in model response. ${diagnostic}` : "No text in model response.");
 }
 
@@ -396,23 +426,30 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
           model,
           system: primaryPrompt.system,
           user: primaryPrompt.user,
-          maxTokens: 1200,
+          maxTokens: 4096,
         });
       } catch (error) {
-        if (error instanceof UpstreamError && error.status >= 500) {
+        if (isRetryableKimiError(error)) {
           const fallbackBody = {
             ...body,
             profile: buildMinimalKimiProfile(body.profile),
           };
           const fallbackPrompt = buildPrompt(fallbackBody, "kimi");
-          text = await callOpenAICompat({
-            apiKey,
-            baseUrl,
-            model,
-            system: fallbackPrompt.system,
-            user: fallbackPrompt.user,
-            maxTokens: 900,
-          });
+          try {
+            text = await callOpenAICompat({
+              apiKey,
+              baseUrl,
+              model,
+              system: fallbackPrompt.system,
+              user: fallbackPrompt.user,
+              maxTokens: 8192,
+            });
+          } catch (fallbackError) {
+            if (fallbackError instanceof ModelOutputTruncatedError) {
+              throw new Error("Kimi ran out of output budget before producing the final answer. Try again, or lower the note length / intensity.");
+            }
+            throw fallbackError;
+          }
         } else {
           throw error;
         }
@@ -432,7 +469,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
         system: prompt.system,
         user: prompt.user,
         temperature: isKimi25Model(model) ? undefined : 0.85,
-        maxTokens: isKimi25Model(model) ? 1200 : undefined,
+        maxTokens: isKimi25Model(model) ? 4096 : undefined,
       });
     } else {
       const apiKey = ctx.env.OPENAI_API_KEY;
