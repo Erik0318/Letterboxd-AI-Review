@@ -83,7 +83,7 @@ import {
   filterExactWatchRowsByYear,
 } from "./lib/watchActivity";
 
-type Provider = "default" | "openai_compat" | "gemini";
+type Provider = "default" | "default_kimi" | "openai_compat" | "gemini";
 type Lang = "en" | "zh" | "uk";
 type HelpState = "expanded" | "collapsed" | "dismissed";
 type ViewOption = SavedViewPreset | SavedViewRecord;
@@ -759,6 +759,9 @@ export default function App() {
       activeSavedViewName,
     });
   }, [activeSavedViewName, currentMajorCounts, currentScopeSummary, currentShareText, explorer, scopeIsActive]);
+  const usesBuiltInAi = provider === "default" || provider === "default_kimi";
+  const usesOpenAICompatAi = provider === "openai_compat";
+  const usesGeminiAi = provider === "gemini";
 
   const drilldownExportMetadata = useMemo(() => {
     if (!explorer) {
@@ -1499,19 +1502,30 @@ export default function App() {
     const id = window.setInterval(() => setAiProgress((value) => Math.min(value + 7, 92)), 700);
     try {
       const dossier = aiDossier(films, stats, datasetSummary);
+      const requestBody = {
+        provider,
+        language,
+        mode,
+        roastLevel,
+        profile: dossier,
+        ...(usesOpenAICompatAi
+          ? {
+            apiKey: apiKey || undefined,
+            baseUrl: baseUrl || undefined,
+            model: model || undefined,
+          }
+          : {}),
+        ...(usesGeminiAi
+          ? {
+            apiKey: apiKey || undefined,
+            model: model || undefined,
+          }
+          : {}),
+      };
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          apiKey: apiKey || undefined,
-          baseUrl: baseUrl || undefined,
-          model: model || undefined,
-          language,
-          mode,
-          roastLevel,
-          profile: dossier,
-        }),
+        body: JSON.stringify(requestBody),
       });
       const data = (await res.json().catch(() => ({}))) as { text?: unknown; error?: unknown };
       if (!res.ok) {
@@ -2250,14 +2264,6 @@ export default function App() {
                 <div className="small">Name on the share card</div>
                 <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Optional" />
               </div>
-              <div>
-                <div className="small">AI language</div>
-                <select value={language} onChange={(event) => setLanguage(event.target.value as Lang)}>
-                  <option value="en">English</option>
-                  <option value="zh">Chinese</option>
-                  <option value="uk">Ukrainian</option>
-                </select>
-              </div>
             </div>
 
             {stats && (
@@ -2733,34 +2739,63 @@ export default function App() {
                     </select>
                   </div>
                   <div>
-                    <div className="small">Provider</div>
-                    <select value={provider} onChange={(event) => setProvider(event.target.value as Provider)}>
-                      <option value="default">Default (DeepSeek)</option>
-                      <option value="openai_compat">DeepSeek / GPT / Doubao</option>
-                      <option value="gemini">Gemini</option>
+                    <div className="small">AI language</div>
+                    <select value={language} onChange={(event) => setLanguage(event.target.value as Lang)}>
+                      <option value="en">English</option>
+                      <option value="zh">Chinese</option>
+                      <option value="uk">Ukrainian</option>
                     </select>
                   </div>
-                  <div style={{ flex: 1, minWidth: 220 }}>
-                    <div className="small">API key</div>
-                    <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Optional" />
+                  <div>
+                    <div className="small">Provider</div>
+                    <select value={provider} onChange={(event) => setProvider(event.target.value as Provider)}>
+                      <option value="default">Built-in DeepSeek</option>
+                      <option value="default_kimi">Built-in Kimi K2.5</option>
+                      <option value="openai_compat">OpenAI-compatible (your key)</option>
+                      <option value="gemini">Gemini (your key)</option>
+                    </select>
                   </div>
                 </div>
+                <p className="small" style={{ marginTop: 10 }}>
+                  Built-in DeepSeek and Kimi K2.5 use the site's free default access. Other providers need your own API key, and anything you type here stays in this browser session only and is not stored by the website.
+                </p>
+                <p className="small">
+                  AI output is always plain text only. No markdown, no asterisks, and any movie titles should stay in English.
+                </p>
+
+                {!usesBuiltInAi && (
+                  <div className="row" style={{ marginTop: 10 }}>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div className="small">API key</div>
+                      <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Required for this provider" />
+                    </div>
+                    {usesOpenAICompatAi && (
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <div className="small">Base URL</div>
+                        <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" />
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div className="small">Model</div>
+                      <input
+                        value={model}
+                        onChange={(event) => setModel(event.target.value)}
+                        placeholder={usesGeminiAi ? "gemini-1.5-flash" : "deepseek-chat / gpt-4.1 / kimi-k2.5"}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="row" style={{ marginTop: 10 }}>
-                  <div style={{ flex: 1, minWidth: 220 }}>
-                    <div className="small">Base URL</div>
-                    <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 220 }}>
-                    <div className="small">Model</div>
-                    <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="deepseek-chat" />
-                  </div>
+                  {usesBuiltInAi && (
+                    <span className="badge">
+                      {provider === "default" ? "Using built-in DeepSeek" : "Using built-in Kimi K2.5"}
+                    </span>
+                  )}
                   <button className="btn primary" onClick={runAI} disabled={aiBusy}>
                     {aiBusy ? "Writing..." : "Write notes"}
                   </button>
                 </div>
-                <p className="small" style={{ marginTop: 10 }}>
-                  The default backend model is DeepSeek. Other models need your own API settings.
-                </p>
 
                 {aiBusy && (
                   <div className="kpi" style={{ marginTop: 10 }}>
