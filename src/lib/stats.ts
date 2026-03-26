@@ -270,6 +270,7 @@ export type ExplorerFilmRow = {
   filmKey: string;
   title: string;
   year: number | null;
+  filmUrl: string | null;
   currentRating: number | null;
   loggedRating: number | null;
   delta: number | null;
@@ -286,6 +287,7 @@ export type ExplorerReviewRow = {
   filmKey: string;
   title: string;
   year: number | null;
+  filmUrl: string | null;
   currentRating: number | null;
   loggedRating: number | null;
   delta: number | null;
@@ -882,7 +884,7 @@ function scopeSummaryText(scope: AnalysisScope): string {
   if (!chips.length) {
     return "Global default view.";
   }
-  return chips.map((chip) => `${chip.label}: ${chip.value}`).join(" · ");
+  return chips.map((chip) => `${chip.label}: ${chip.value}`).join(" | ");
 }
 
 export function applyAnalysisScope(films: FilmRecord[], scope: AnalysisScope): {
@@ -1073,6 +1075,7 @@ export function buildExplorerFilmRows(films: FilmRecord[]): ExplorerFilmRow[] {
         filmKey: film.filmKey,
         title: film.name,
         year: film.year,
+        filmUrl: film.filmUri,
         currentRating: film.currentRating,
         loggedRating: film.loggedRating,
         delta,
@@ -1100,6 +1103,7 @@ export function buildExplorerReviewRows(films: FilmRecord[]): ExplorerReviewRow[
         filmKey: film.filmKey,
         title: film.name,
         year: film.year,
+        filmUrl: film.filmUri,
         currentRating: film.currentRating,
         loggedRating: film.loggedRating,
         delta,
@@ -1327,7 +1331,7 @@ export function computeScopedView(
     shareCard,
     shareText: {
       short:
-        `${label}: ${formatInt(scopedFilms.length)} scoped films · ${scopedSelection.summary} · ` +
+        `${label}: ${formatInt(scopedFilms.length)} scoped films | ${scopedSelection.summary} | ` +
         `${formatInt(counts.currentRatedFilms)} current rated films`,
       long:
         `${label} scoped view: ${scopedSelection.summary} ` +

@@ -88,7 +88,7 @@ export default function ArchiveListsPanel({
                         list.exportedDate ? `exported ${list.exportedDate}` : null,
                         list.tags.length ? `tags: ${list.tags.join(", ")}` : null,
                         list.parseError ? `parse issue: ${list.parseError}` : null,
-                      ].filter(Boolean).join(" · ") || "n/a"}
+                      ].filter(Boolean).join(" | ") || "n/a"}
                     </div>
                   </div>
                 ))}

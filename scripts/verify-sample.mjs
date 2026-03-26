@@ -1,6 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { computeScopedView, computeStats } from "../.verify/stats.js";
+import { buildExplorerExportRows } from "../.verify/explorer.js";
 import { mergeTablesToFilms, readLetterboxdExportZip } from "../.verify/letterboxd.js";
+import {
+  areSavedViewSnapshotsEqual,
+  createSavedViewRecord,
+  parseSavedViews,
+  serializeSavedViews,
+} from "../.verify/savedViews.js";
+import { buildCurrentViewSummary } from "../.verify/viewState.js";
+import { buildExactWatchActivity } from "../.verify/watchActivity.js";
+import {
+  buildDefaultCollapsedSections,
+  buildDrilldownContextTrail,
+  buildReportMenuEntries,
+  buildReportSectionHash,
+  inferExplorerSectionId,
+  parseCollapsedSections,
+  parseReportSectionHash,
+  serializeCollapsedSections,
+} from "../.verify/reportSections.js";
 
 function assertThat(condition, message) {
   if (!condition) {
@@ -24,6 +43,72 @@ const changed2010sScope = computeScopedView(merged.films, {
   loggedRatingMax: null,
   reviewPresence: "all",
 }, "Sample");
+const exactWatchActivity = buildExactWatchActivity(merged.films);
+const sampleViewSummary = buildCurrentViewSummary({
+  scopeIsActive: true,
+  scopeSummary: changed2010sScope.scope.summary,
+  shareTextLong: changed2010sScope.shareText.long,
+  majorCounts: {
+    watchedFilms: changed2010sScope.overview.scopedFilms.value,
+    currentRatedFilms: changed2010sScope.overview.currentRatedFilms.value,
+    exactDatedWatchedFilms: changed2010sScope.overview.exactDatedWatchedFilms.value,
+    watchedFilmsWithoutExactDate: changed2010sScope.overview.scopedFilms.value - changed2010sScope.overview.exactDatedWatchedFilms.value,
+  },
+  drilldown: {
+    title: "Changed drift films",
+    source: "Rating drift summary bucket changed",
+    rowBasis: "Unique films (film-level)",
+    rowCount: changed2010sScope.filmRows.length,
+  },
+  activeSavedViewName: "Changed drift films",
+});
+const savedViewSource = createSavedViewRecord("Changed drift films", {
+  scope: changed2010sScope.scope.activeScope,
+  explorerRoute: "driftCategory|changed",
+  ratingDriftSort: "largestAbsoluteChange",
+  explorerSortKey: "delta",
+  explorerSortDirection: "desc",
+}, "2026-03-26T00:00:00.000Z");
+const savedViewRoundTrip = parseSavedViews(serializeSavedViews([
+  savedViewSource,
+]));
+const reportMenuPreview = buildReportMenuEntries({
+  overview: [
+    { label: "Watched films", value: String(stats.overview.watchedFilmsUnique.value) },
+    { label: "Current rated", value: String(stats.overview.currentRatedFilms.value) },
+  ],
+  ratings: [
+    { label: "Current mean", value: stats.overview.currentMeanRating.value === null ? "n/a" : String(stats.overview.currentMeanRating.value) },
+    { label: "Changed drift", value: String(stats.ratingDrift.summary.changed.value) },
+  ],
+});
+const collapseRoundTrip = parseCollapsedSections(serializeCollapsedSections({
+  ...buildDefaultCollapsedSections("reviews"),
+  reviews: false,
+  "data-quality": false,
+}), "reviews");
+const drilldownTrail = buildDrilldownContextTrail({
+  activeScope: changed2010sScope.scope.summary,
+  sectionId: inferExplorerSectionId("driftCategory|changed"),
+  drilldownSource: "Rating drift summary bucket changed",
+  drilldownTitle: "Changed drift films",
+});
+const watchExportRows = buildExplorerExportRows({
+  kind: "watchEvents",
+  title: "Exact watch events",
+  subtitle: "Sample",
+  source: "Sample activity export",
+  exportFileName: "watch.csv",
+  context: {
+    globalContext: "Sample export",
+    activeScope: "Global default view",
+    drilldownSource: "Sample exact watch activity",
+    rowBasis: "Exact watch events (row-level, exact-date only)",
+    emptyTitle: "Empty",
+    emptyBody: "Empty",
+  },
+  rows: exactWatchActivity.rows.slice(0, 10),
+});
 
 console.log("Sample dataset summary:");
 console.log(JSON.stringify({
@@ -58,6 +143,24 @@ console.log(JSON.stringify({
   releaseAnalytics: stats.releaseAnalytics,
   archives: stats.archives,
   shareText: stats.shareText,
+  exactWatchActivity: {
+    exactWatchEvents: exactWatchActivity.exactWatchEvents,
+    exactDatedWatchedFilms: exactWatchActivity.exactDatedWatchedFilms,
+    busiestMonths: exactWatchActivity.busiestMonths,
+    busiestYears: exactWatchActivity.busiestYears,
+    bestStreak: exactWatchActivity.bestStreak,
+    longestGaps: exactWatchActivity.longestGaps,
+  },
+  currentViewSummary: sampleViewSummary,
+  savedViewRoundTrip,
+  reportNavigation: {
+    ratingsHash: buildReportSectionHash("ratings"),
+    ratingsHashRoundTrip: parseReportSectionHash(buildReportSectionHash("ratings")),
+    collapseRoundTrip,
+    drilldownTrail,
+    reportMenuPreview: reportMenuPreview.slice(0, 3),
+  },
+  watchExportPreview: watchExportRows.slice(0, 3),
   scopedSample: {
     scope: changed2010sScope.scope,
     overview: changed2010sScope.overview,
@@ -98,6 +201,17 @@ assertThat(stats.archives.summary.deletedDiaryRows.value === merged.summary.arch
 assertThat(stats.archives.summary.orphanedReviewRows.value === merged.summary.archiveSummary.orphaned.reviewRows, "archive stats orphaned review rows should match dataset summary");
 assertThat(stats.activity.heatmap.exactWatchEvents === merged.summary.dateQualitySummary.exactWatchEvents, "heatmap should use exact watch events only");
 assertThat(stats.activity.longestStreakDays === stats.overview.bestStreakDays.value, "best streak should use exact-only activity stats");
+assertThat(exactWatchActivity.exactWatchEvents === merged.summary.dateQualitySummary.exactWatchEvents, "exact watch explorer rows should stay aligned with exact watch event counts");
+assertThat(exactWatchActivity.exactDatedWatchedFilms === merged.summary.dateQualitySummary.exactDatedWatchedFilms, "exact watch explorer film counts should stay aligned with exact-dated watched film counts");
+assertThat(sampleViewSummary.mode === "drilldown", "current view summaries should register scoped drilldowns on sample data");
+assertThat(sampleViewSummary.text.includes("Saved view: Changed drift films."), "current view summaries should include saved-view context when present");
+assertThat(savedViewRoundTrip.length === 1 && areSavedViewSnapshotsEqual(savedViewRoundTrip[0].snapshot, savedViewSource.snapshot), "saved view serialization should round-trip on sample data");
+assertThat(parseReportSectionHash(buildReportSectionHash("ratings")) === "ratings", "report-section hashes should round-trip on sample data");
+assertThat(collapseRoundTrip.reviews === false && collapseRoundTrip["data-quality"] === false, "collapse persistence should keep explicit open sections on sample data");
+assertThat(inferExplorerSectionId("driftCategory|changed") === "ratings", "drift drilldowns should map back to ratings on sample data");
+assertThat(drilldownTrail[1].value === "Ratings", "drilldown trails should use canonical section titles on sample data");
+assertThat(reportMenuPreview[0].id === "overview" && reportMenuPreview[2].id === "ratings", "report menu previews should preserve canonical section order on sample data");
+assertThat(Object.keys(watchExportRows[0] || {}).join("|") === "title|year|exact_watched_date|current_rating|logged_rating|review_present|in_watchlist|source|rewatch|film_url", "sample exact watch exports should keep the expected CSV shape");
 assertThat(stats.releaseAnalytics.decadeRatings.every((row) => row.currentMeanRating === null || row.currentRatedFilms > 0), "release analytics current mean should only exist when current-rated films are present");
 assertThat(stats.releaseAnalytics.decadeRatings.every((row) => row.loggedMeanRating === null || row.loggedRatedFilms > 0), "release analytics logged mean should only exist when logged-rated films are present");
 assertThat(merged.films.some((film) => film.filmUri && film.reviewEntryUris.length > 0 && !film.reviewEntryUris.includes(film.filmUri)), "film URI and review entry URI layers should remain separate");

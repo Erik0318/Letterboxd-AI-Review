@@ -7,12 +7,14 @@ export function Heatmap({
   emptyText = "No dates found in the export.",
   footerText = "Shows the last 6 years found in your dates.",
   subtitle,
+  onCellClick,
 }: {
   byMonth: Array<{ month: string; count: number }>;
   title?: string;
   emptyText?: string;
   footerText?: string;
   subtitle?: string;
+  onCellClick?: (month: string) => void;
 }) {
   const map = new Map(byMonth.map(m => [m.month, m.count]));
   const months = Array.from(map.keys()).sort();
@@ -39,7 +41,17 @@ export function Heatmap({
               const mm = String(m).padStart(2, "0");
               const key = `${y}-${mm}`;
               const c = map.get(key) || 0;
-              row.push(<div key={key} className="cell" style={cellStyle(c)} title={`${key}: ${c}`} />);
+              row.push(
+                <button
+                  key={key}
+                  type="button"
+                  className={`cell${onCellClick ? " isInteractive" : ""}`}
+                  style={cellStyle(c)}
+                  title={`${key}: ${c}`}
+                  onClick={() => onCellClick?.(key)}
+                  disabled={!onCellClick}
+                />,
+              );
             }
             return (
               <div key={y}>

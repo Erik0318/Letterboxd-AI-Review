@@ -28,6 +28,7 @@ function parseNullableNumber(value: string): number | null {
 }
 
 export default function ScopeBar({
+  className,
   scope,
   isActive,
   chips,
@@ -43,6 +44,7 @@ export default function ScopeBar({
   onExport,
   onCopySummary,
 }: {
+  className?: string;
   scope: AnalysisScope;
   isActive: boolean;
   chips: ScopeFilterChip[];
@@ -63,7 +65,7 @@ export default function ScopeBar({
   }
 
   return (
-    <div className="card">
+    <div className={`card${className ? ` ${className}` : ""}`}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <h2>Analysis scope</h2>

@@ -6,6 +6,33 @@ import {
   computeStats,
 } from "../.verify/stats.js";
 import {
+  buildExplorerExportRows,
+} from "../.verify/explorer.js";
+import {
+  areSavedViewSnapshotsEqual,
+  createSavedViewRecord,
+  parseSavedViews,
+  serializeSavedViews,
+} from "../.verify/savedViews.js";
+import { buildCurrentViewSummary } from "../.verify/viewState.js";
+import {
+  buildExactWatchActivity,
+  filterExactWatchRowsByDay,
+  filterExactWatchRowsByMonth,
+  filterExactWatchRowsByRange,
+  filterExactWatchRowsByYear,
+} from "../.verify/watchActivity.js";
+import {
+  buildDefaultCollapsedSections,
+  buildDrilldownContextTrail,
+  buildReportMenuEntries,
+  buildReportSectionHash,
+  inferExplorerSectionId,
+  parseCollapsedSections,
+  parseReportSectionHash,
+  serializeCollapsedSections,
+} from "../.verify/reportSections.js";
+import {
   createFilmKey,
   mergeTablesToFilms,
   parseLetterboxdListCsv,
@@ -242,9 +269,11 @@ assertThat(upgradedScope.filmRows.length === 1 && upgradedScope.filmRows[0].delt
 
 const watchlistExplorerRows = buildExplorerFilmRows(merged.films.filter((film) => film.inWatchlist));
 assertThat(watchlistExplorerRows.length === 1 && watchlistExplorerRows[0].inWatchlist, "film explorer rows should support watchlist drilldowns");
+assertThat(watchlistExplorerRows[0].filmUrl === "https://boxd.it/watchlist-only", "film explorer rows should carry film URLs for row actions");
 
 const reviewExplorerRows = buildExplorerReviewRows(merged.films);
 assertThat(reviewExplorerRows.length === 1 && reviewExplorerRows[0].reviewLength === 11, "review explorer rows should stay row-level and expose review length");
+assertThat(reviewExplorerRows[0].filmUrl === "https://boxd.it/film-heat", "review explorer rows should also keep film URLs for row actions");
 
 const drift = buildRatingDrift([
   { filmKey: "aaron::1990", name: "Aaron", year: 1990, loggedRating: 4, currentRating: 2 },
@@ -265,5 +294,172 @@ assertThat(drift.summary.meanDelta.value === 0, "manual drift dataset should com
 assertThat(drift.lists.biggestDowngrade.map((film) => film.name).join("|") === "Aaron|Beta|Alpha", "biggest downgrade sort should be stable");
 assertThat(drift.lists.biggestUpgrade.map((film) => film.name).join("|") === "Aardvark|Gamma|Delta", "biggest upgrade sort should be stable");
 assertThat(drift.lists.largestAbsoluteChange.map((film) => film.name).join("|") === "Aardvark|Aaron|Beta|Gamma|Alpha|Delta", "largest absolute change sort should fall back to film name");
+
+const exactWatchActivity = buildExactWatchActivity([
+  {
+    filmKey: "alpha::2000",
+    name: "Alpha",
+    year: 2000,
+    filmUri: "https://boxd.it/alpha",
+    inWatched: true,
+    inDiary: true,
+    inReviews: false,
+    inRatings: true,
+    inWatchlist: false,
+    currentRating: 4,
+    watchEvents: [
+      { id: "alpha-1", exactWatchedDate: "2024-01-01", loggedRating: 4, source: "diary", rewatch: false },
+      { id: "alpha-2", exactWatchedDate: "2024-01-02", loggedRating: 4.5, source: "review", rewatch: true },
+    ],
+  },
+  {
+    filmKey: "beta::2001",
+    name: "Beta",
+    year: 2001,
+    filmUri: "https://boxd.it/beta",
+    inWatched: true,
+    inDiary: true,
+    inReviews: true,
+    inRatings: true,
+    inWatchlist: true,
+    currentRating: 3.5,
+    watchEvents: [
+      { id: "beta-1", exactWatchedDate: "2024-01-02", loggedRating: 3, source: "diary+review", rewatch: false },
+      { id: "beta-2", exactWatchedDate: "2024-01-04", loggedRating: null, source: "diary", rewatch: false },
+    ],
+  },
+  {
+    filmKey: "gamma::2002",
+    name: "Gamma",
+    year: 2002,
+    filmUri: "https://boxd.it/gamma",
+    inWatched: true,
+    inDiary: true,
+    inReviews: false,
+    inRatings: false,
+    inWatchlist: false,
+    currentRating: null,
+    watchEvents: [
+      { id: "gamma-1", exactWatchedDate: null, loggedRating: null, source: "diary", rewatch: false },
+    ],
+  },
+]);
+
+assertThat(exactWatchActivity.exactWatchEvents === 4, "exact watch activity should keep exact-date rows only");
+assertThat(exactWatchActivity.exactDatedWatchedFilms === 2, "exact watch activity should keep distinct film counts separate from event rows");
+assertThat(exactWatchActivity.busiestMonths[0].label === "2024-01" && exactWatchActivity.busiestMonths[0].count === 4, "exact watch activity should summarize busiest months");
+assertThat(exactWatchActivity.busiestYears[0].label === "2024" && exactWatchActivity.busiestYears[0].count === 4, "exact watch activity should summarize busiest years");
+assertThat(exactWatchActivity.bestStreak.startDate === "2024-01-01" && exactWatchActivity.bestStreak.endDate === "2024-01-02", "exact watch activity should keep best streak context");
+assertThat(exactWatchActivity.longestGaps[0].gapDays === 1, "exact watch activity should compute longest gaps between exact watch days");
+assertThat(filterExactWatchRowsByMonth(exactWatchActivity.rows, "2024-01").length === 4, "month drilldowns should preserve exact-date row counts");
+assertThat(filterExactWatchRowsByYear(exactWatchActivity.rows, "2024").length === 4, "year drilldowns should preserve exact-date row counts");
+assertThat(filterExactWatchRowsByDay(exactWatchActivity.rows, "2024-01-02").length === 2, "day drilldowns should preserve multiple exact watch events on the same day");
+assertThat(filterExactWatchRowsByRange(exactWatchActivity.rows, "2024-01-01", "2024-01-02").length === 3, "range drilldowns should keep inclusive exact-date windows");
+
+const scopedSummary = buildCurrentViewSummary({
+  scopeIsActive: true,
+  scopeSummary: currentRatedHighScope.scope.summary,
+  shareTextLong: currentRatedHighScope.shareText.long,
+  majorCounts: {
+    watchedFilms: currentRatedHighScope.overview.scopedFilms.value,
+    currentRatedFilms: currentRatedHighScope.overview.currentRatedFilms.value,
+    exactDatedWatchedFilms: currentRatedHighScope.overview.exactDatedWatchedFilms.value,
+    watchedFilmsWithoutExactDate: currentRatedHighScope.overview.scopedFilms.value - currentRatedHighScope.overview.exactDatedWatchedFilms.value,
+  },
+  drilldown: {
+    title: "Current rating 4.5",
+    source: "Current rating histogram bin 4.5",
+    rowBasis: "Unique films (film-level)",
+    rowCount: 1,
+  },
+  activeSavedViewName: "Current-rated films",
+});
+
+assertThat(scopedSummary.mode === "drilldown", "current view summaries should distinguish drilldown subsets from scoped reports");
+assertThat(scopedSummary.text.includes("Open drilldown: Current rating 4.5."), "current view summaries should include drilldown context in share/export text");
+assertThat(scopedSummary.text.includes("Saved view: Current-rated films."), "current view summaries should include active saved-view context");
+
+const savedViewRecord = createSavedViewRecord("Changed drift snapshot", {
+  scope: upgradedScope.scope.activeScope,
+  explorerRoute: "driftCategory|upgraded",
+  ratingDriftSort: "biggestUpgrade",
+  explorerSortKey: "delta",
+  explorerSortDirection: "desc",
+}, "2026-03-26T00:00:00.000Z");
+const parsedSavedViews = parseSavedViews(serializeSavedViews([savedViewRecord]));
+
+assertThat(parsedSavedViews.length === 1, "saved view serialization should round-trip custom views");
+assertThat(parsedSavedViews[0].name === "Changed drift snapshot", "saved view parsing should keep the saved name");
+assertThat(areSavedViewSnapshotsEqual(parsedSavedViews[0].snapshot, savedViewRecord.snapshot), "saved view restoration should preserve scope, drilldown route, and sort state");
+
+const reportHash = buildReportSectionHash("ratings");
+const defaultCollapsed = buildDefaultCollapsedSections("ratings");
+const restoredCollapsed = parseCollapsedSections(serializeCollapsedSections({
+  ...defaultCollapsed,
+  reviews: false,
+  ai: true,
+}), "ratings");
+const trail = buildDrilldownContextTrail({
+  activeScope: "Changed drift films",
+  sectionId: inferExplorerSectionId("driftCategory|changed"),
+  drilldownSource: "Rating drift summary bucket changed",
+  drilldownTitle: "Rating drift: changed",
+});
+const menuEntries = buildReportMenuEntries({
+  overview: [
+    { label: "Watched films", value: "2" },
+    { label: "Current rated", value: "1" },
+  ],
+  ratings: [
+    { label: "Current mean", value: "4.5" },
+    { label: "Changed drift", value: "1" },
+  ],
+});
+
+assertThat(reportHash === "#section-ratings", "report-section hashes should use stable section anchors");
+assertThat(parseReportSectionHash(reportHash) === "ratings", "report-section hashes should round-trip back to the canonical section id");
+assertThat(defaultCollapsed.overview === false && defaultCollapsed.ratings === false && defaultCollapsed.reviews === true, "default collapse state should keep overview and the active target open while allowing deep sections to start collapsed");
+assertThat(restoredCollapsed.overview === false && restoredCollapsed.ratings === false && restoredCollapsed.reviews === false && restoredCollapsed.ai === true, "collapse state persistence should normalize around the active section while preserving explicit user choices");
+assertThat(inferExplorerSectionId("releaseDecade|watchlist|1980s") === "watchlist", "watchlist drilldown routes should map back to the watchlist section");
+assertThat(inferExplorerSectionId("activityMonth|2024-01") === "watched-activity", "exact-watch drilldown routes should map back to watched activity");
+assertThat(trail.map((item) => item.label).join("|") === "Scope|Section|Source|Drilldown", "drilldown context trails should preserve scope, section, source, and drilldown labels");
+assertThat(trail[1].value === "Ratings", "drilldown context trails should use the canonical section title");
+assertThat(menuEntries[0].id === "overview" && menuEntries[2].metrics[0].label === "Current mean", "report menu entries should preserve canonical section order while attaching selector-driven preview metrics");
+
+const filmExportRows = buildExplorerExportRows({
+  kind: "films",
+  title: "Films",
+  subtitle: "Synthetic",
+  source: "Synthetic",
+  exportFileName: "films.csv",
+  context: {
+    globalContext: "Synthetic export",
+    activeScope: "Global default view",
+    drilldownSource: "Synthetic film export",
+    rowBasis: "Unique films (film-level)",
+    emptyTitle: "Empty",
+    emptyBody: "Empty",
+  },
+  rows: currentRatedHighScope.filmRows,
+});
+const watchExportRows = buildExplorerExportRows({
+  kind: "watchEvents",
+  title: "Exact watch events",
+  subtitle: "Synthetic",
+  source: "Synthetic activity export",
+  exportFileName: "watch.csv",
+  context: {
+    globalContext: "Synthetic export",
+    activeScope: "Global default view",
+    drilldownSource: "Synthetic watch export",
+    rowBasis: "Exact watch events (row-level, exact-date only)",
+    emptyTitle: "Empty",
+    emptyBody: "Empty",
+  },
+  rows: exactWatchActivity.rows,
+});
+
+assertThat(Object.keys(filmExportRows[0]).join("|") === "title|year|current_rating|logged_rating|delta|exact_watched_date|review_rows|longest_review_length|in_watchlist|watchlist_added_date|film_url", "film drilldown CSV export should keep the expected column shape");
+assertThat(Object.keys(watchExportRows[0]).join("|") === "title|year|exact_watched_date|current_rating|logged_rating|review_present|in_watchlist|source|rewatch|film_url", "exact watch drilldown CSV export should keep the expected column shape");
 
 console.log("Synthetic data-layer tests passed.");

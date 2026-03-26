@@ -23,14 +23,14 @@ export default function ShareCard({
   shareCard,
   label,
   labels,
-  contextNote,
+  contextItems,
 }: {
   generatedAt: string;
   badgeText: string;
   shareCard: ShareCardSummary;
   label: string;
   labels: ShareCardLabels;
-  contextNote?: string | null;
+  contextItems?: Array<{ label: string; value: string }>;
 }) {
   const mean = shareCard.currentMeanRating === null ? labels.na : round3(shareCard.currentMeanRating);
   const med = shareCard.currentMedianRating === null ? labels.na : round1(shareCard.currentMedianRating);
@@ -41,7 +41,13 @@ export default function ShareCard({
         <div>
           <h3>{label || " "} {labels.titleSuffix}</h3>
           <div className="small">{labels.generated} {new Date(generatedAt).toLocaleString("en-GB")}</div>
-          {contextNote && <div className="small" style={{ marginTop: 4 }}>{contextNote}</div>}
+          {contextItems && contextItems.length > 0 && (
+            <div className="shareContextList">
+              {contextItems.slice(0, 3).map((item) => (
+                <div className="small" key={`${item.label}:${item.value}`}>{item.label}: {item.value}</div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="badge">{labels.badge}: {badgeText}</div>
       </div>
