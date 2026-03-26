@@ -263,39 +263,317 @@ function slugifyFileName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "saved_view";
 }
 
+const AI_SAMPLE_LIMIT = 10;
+const AI_REVIEW_SAMPLE_LIMIT = 6;
+const AI_PAYLOAD_CHAR_BUDGET = 24000;
+
+function trimAiSnippet(value: string | null | undefined, maxLength = 140): string | null {
+  const cleaned = String(value || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return null;
+  }
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function filmLabel(name: string, year: number | null): string {
+  return year === null ? name : `${name} (${year})`;
+}
+
+function sortIsoDesc(left: string | null, right: string | null): number {
+  return (right || "").localeCompare(left || "");
+}
+
+function pickEarliestIso(values: string[]): string | null {
+  if (!values.length) {
+    return null;
+  }
+  return [...values].sort((left, right) => left.localeCompare(right))[0] || null;
+}
+
+function longestReviewText(film: FilmRecord): string | null {
+  let longest = "";
+  for (const review of film.reviewTexts) {
+    if (review.length > longest.length) {
+      longest = review;
+    }
+  }
+  return longest || null;
+}
+
+function pickUniqueMapped<T>(
+  items: T[],
+  key: (item: T) => string,
+  map: (item: T) => string | null,
+  limit: number,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const itemKey = key(item);
+    if (seen.has(itemKey)) {
+      continue;
+    }
+    seen.add(itemKey);
+    const mapped = map(item);
+    if (!mapped) {
+      continue;
+    }
+    out.push(mapped);
+    if (out.length >= limit) {
+      break;
+    }
+  }
+  return out;
+}
+
+function compactHistogram(histogram: Array<{ rating: number; count: number }>): string[] {
+  return histogram
+    .filter((item) => item.count > 0)
+    .map((item) => `${item.rating}:${item.count}`);
+}
+
+function compactNamedCounts(items: Array<{ word?: string; decade?: string; year?: number; count: number }>, limit: number): string[] {
+  return items
+    .slice(0, limit)
+    .map((item) => {
+      if (item.word) {
+        return `${item.word}:${item.count}`;
+      }
+      if (item.decade) {
+        return `${item.decade}:${item.count}`;
+      }
+      return `${item.year}:${item.count}`;
+    });
+}
+
+function compactListTitles(
+  lists: NonNullable<DatasetSummary["listSummary"]>["lists"] | undefined,
+  scope: "active" | "orphaned",
+  limit: number,
+): string[] {
+  return (lists || [])
+    .filter((list) => list.scope === scope)
+    .sort((left, right) => right.itemCount - left.itemCount || (left.title || left.path).localeCompare(right.title || right.path))
+    .slice(0, limit)
+    .map((list) => `${list.title || list.path}:${list.itemCount}`);
+}
+
 function aiDossier(films: FilmRecord[], stats: StatPack, summary: DatasetSummary | null) {
-  const entries = [...films]
-    .sort((left, right) => (right.exactWatchedDate || "0000-00-00").localeCompare(left.exactWatchedDate || "0000-00-00"))
-    .map((film) => ({
-      name: film.name,
-      year: film.year,
-      currentRating: film.currentRating,
-      loggedRating: film.loggedRating,
-      bestRating: film.bestRating,
-      bestWatchedDate: film.bestWatchedDate,
-      exactWatchedDate: film.exactWatchedDate,
-      estimatedWatchedDate: film.estimatedWatchedDate,
-      sources: film.sourceFlags.tables,
-      inWatchlist: film.inWatchlist,
-      rewatchCount: film.rewatchCount,
-      reviewSample: film.reviewTexts.slice(0, 1),
-    }));
+  const watchedFilms = films.filter((film) => film.inWatched || film.watchedRows > 0 || film.diaryRows > 0 || film.reviewRows > 0);
+  const currentRatedFilms = films.filter((film) => film.currentRating !== null);
+  const loggedRatedFilms = films.filter((film) => film.loggedRating !== null);
+  const comparableFilms = films.filter((film) => film.currentRating !== null && film.loggedRating !== null);
+  const reviewFilms = films.filter((film) => film.reviewTexts.length > 0);
+  const rewatchFilms = films.filter((film) => film.rewatchCount > 0);
+  const unratedWatchedFilms = watchedFilms.filter((film) => film.currentRating === null);
+  const watchlistFilms = films.filter((film) => film.inWatchlist);
+  const upgradedFilms = comparableFilms.filter((film) => (film.currentRating || 0) - (film.loggedRating || 0) > 0);
+  const downgradedFilms = comparableFilms.filter((film) => (film.currentRating || 0) - (film.loggedRating || 0) < 0);
+
+  const currentFavorites = [...currentRatedFilms].sort((left, right) =>
+    (right.currentRating || 0) - (left.currentRating || 0)
+    || right.rewatchCount - left.rewatchCount
+    || right.reviewRows - left.reviewRows
+    || sortIsoDesc(left.exactWatchedDate, right.exactWatchedDate)
+    || left.name.localeCompare(right.name));
+  const recentWatches = [...watchedFilms].sort((left, right) =>
+    sortIsoDesc(left.exactWatchedDate || left.bestWatchedDate, right.exactWatchedDate || right.bestWatchedDate)
+    || (right.currentRating || 0) - (left.currentRating || 0)
+    || left.name.localeCompare(right.name));
+  const biggestUpgrades = [...upgradedFilms].sort((left, right) =>
+    ((right.currentRating || 0) - (right.loggedRating || 0)) - ((left.currentRating || 0) - (left.loggedRating || 0))
+    || (right.currentRating || 0) - (left.currentRating || 0)
+    || left.name.localeCompare(right.name));
+  const biggestDowngrades = [...downgradedFilms].sort((left, right) =>
+    ((left.currentRating || 0) - (left.loggedRating || 0)) - ((right.currentRating || 0) - (right.loggedRating || 0))
+    || (left.currentRating || 0) - (right.currentRating || 0)
+    || left.name.localeCompare(right.name));
+  const rewatchLeaders = [...rewatchFilms].sort((left, right) =>
+    right.rewatchCount - left.rewatchCount
+    || (right.currentRating || 0) - (left.currentRating || 0)
+    || left.name.localeCompare(right.name));
+  const longestReviewed = [...reviewFilms].sort((left, right) =>
+    (longestReviewText(right)?.length || 0) - (longestReviewText(left)?.length || 0)
+    || right.reviewRows - left.reviewRows
+    || left.name.localeCompare(right.name));
+  const watchlistFrontier = [...watchlistFilms].sort((left, right) =>
+    sortIsoDesc(pickEarliestIso(left.watchlistAddedDates), pickEarliestIso(right.watchlistAddedDates))
+    || (right.year || 0) - (left.year || 0)
+    || left.name.localeCompare(right.name));
+
+  const profile = {
+    profileVersion: "ai_profile_v3_compact",
+    scope: "full_report",
+    summary: {
+      watchedFilms: stats.overview.watchedFilmsUnique.value,
+      currentRatedFilms: stats.overview.currentRatedFilms.value,
+      loggedRatedFilms: stats.quickFacts.loggedRatedFilms.value,
+      exactWatchDatedFilms: stats.overview.exactDatedWatchedFilms.value,
+      missingExactWatchDates: stats.overview.watchedFilmsWithoutExactDate.value,
+      reviewRows: stats.quickFacts.reviewRows.value,
+      reviewedFilms: stats.reviews.summary.reviewedFilms.value,
+      watchlistFilms: stats.backlog.summary.watchlistFilms.value,
+      bestStreakDays: stats.overview.bestStreakDays.value,
+      badge: stats.fun.badge,
+      commitmentIndexPct: Math.round(stats.quickFacts.commitmentIndex.value * 100),
+      currentMean: stats.ratings.current.mean === null ? null : round3(stats.ratings.current.mean),
+      currentMedian: stats.ratings.current.median === null ? null : round1(stats.ratings.current.median),
+      loggedMean: stats.ratings.logged.mean === null ? null : round3(stats.ratings.logged.mean),
+      currentStddev: stats.quickFacts.currentRatingStddev.value === null ? null : round3(stats.quickFacts.currentRatingStddev.value),
+    },
+    ratingPatterns: {
+      currentHistogram: compactHistogram(stats.ratings.current.histogram),
+      loggedHistogram: compactHistogram(stats.ratings.logged.histogram),
+      drift: {
+        comparableFilms: stats.ratingDrift.summary.comparableFilms.value,
+        changedFilms: stats.ratingDrift.summary.changed.value,
+        upgradedFilms: stats.ratingDrift.summary.upgraded.value,
+        downgradedFilms: stats.ratingDrift.summary.downgraded.value,
+        meanDelta: stats.ratingDrift.summary.meanDelta.value === null ? null : round3(stats.ratingDrift.summary.meanDelta.value),
+        biggestUpgrades: pickUniqueMapped(
+          biggestUpgrades,
+          (film) => film.filmKey,
+          (film) => `${filmLabel(film.name, film.year)} | ${round1((film.currentRating || 0) - (film.loggedRating || 0)) > 0 ? "+" : ""}${round1((film.currentRating || 0) - (film.loggedRating || 0))} | ${round1(film.loggedRating || 0)} -> ${round1(film.currentRating || 0)}`,
+          AI_SAMPLE_LIMIT,
+        ),
+        biggestDowngrades: pickUniqueMapped(
+          biggestDowngrades,
+          (film) => film.filmKey,
+          (film) => `${filmLabel(film.name, film.year)} | ${round1((film.currentRating || 0) - (film.loggedRating || 0))} | ${round1(film.loggedRating || 0)} -> ${round1(film.currentRating || 0)}`,
+          AI_SAMPLE_LIMIT,
+        ),
+      },
+    },
+    activitySignals: {
+      busiestDay: stats.activity.busiestDay
+        ? `${stats.activity.busiestDay.day}:${stats.activity.busiestDay.count}`
+        : null,
+      recent90ExactWatchEvents: stats.activity.recent90.exactWatchEvents,
+      recent90ExactWatchFilms: stats.activity.recent90.exactDatedWatchedFilms,
+      recent90CurrentRatedFilms: stats.activity.recent90.currentRatedFilms,
+      recent90MeanCurrentRating: stats.activity.recent90.meanCurrentRating === null ? null : round3(stats.activity.recent90.meanCurrentRating),
+    },
+    eraSignals: {
+      watchedReleaseSpan: stats.releaseYears.watchedFilms.span.min !== null && stats.releaseYears.watchedFilms.span.max !== null
+        ? `${stats.releaseYears.watchedFilms.span.min}-${stats.releaseYears.watchedFilms.span.max}`
+        : null,
+      topDecades: compactNamedCounts(
+        [...stats.releaseYears.watchedFilms.decadeBuckets].sort((left, right) => right.count - left.count),
+        8,
+      ),
+      topYears: compactNamedCounts(stats.releaseYears.watchedFilms.topYears, 8),
+      highestCurrentRatedDecade: stats.releaseAnalytics.summary.highestCurrentRatedDecade
+        ? `${stats.releaseAnalytics.summary.highestCurrentRatedDecade.decade}:${round1(stats.releaseAnalytics.summary.highestCurrentRatedDecade.meanRating)}`
+        : null,
+      highestLoggedRatedDecade: stats.releaseAnalytics.summary.highestLoggedRatedDecade
+        ? `${stats.releaseAnalytics.summary.highestLoggedRatedDecade.decade}:${round1(stats.releaseAnalytics.summary.highestLoggedRatedDecade.meanRating)}`
+        : null,
+    },
+    reviewLanguage: {
+      reviewRatePct: Math.round(stats.reviews.summary.reviewRate.value * 100),
+      averageLength: stats.reviews.summary.averageReviewLength.value === null ? null : round1(stats.reviews.summary.averageReviewLength.value),
+      medianLength: stats.reviews.summary.medianReviewLength.value === null ? null : round1(stats.reviews.summary.medianReviewLength.value),
+      topWords: compactNamedCounts(stats.text.topWords, 18),
+      sampleSnippets: pickUniqueMapped(
+        longestReviewed,
+        (film) => film.filmKey,
+        (film) => {
+          const snippet = trimAiSnippet(longestReviewText(film), 120);
+          return snippet ? `${filmLabel(film.name, film.year)} | ${snippet}` : null;
+        },
+        AI_REVIEW_SAMPLE_LIMIT,
+      ),
+    },
+    behaviorSignals: {
+      recentWatches: pickUniqueMapped(
+        recentWatches,
+        (film) => film.filmKey,
+        (film) => `${filmLabel(film.name, film.year)} | watched ${film.exactWatchedDate || film.bestWatchedDate || "n/a"} | current ${film.currentRating === null ? "n/a" : round1(film.currentRating)}`,
+        AI_SAMPLE_LIMIT,
+      ),
+      currentFavorites: pickUniqueMapped(
+        currentFavorites,
+        (film) => film.filmKey,
+        (film) => `${filmLabel(film.name, film.year)} | current ${film.currentRating === null ? "n/a" : round1(film.currentRating)} | logged ${film.loggedRating === null ? "n/a" : round1(film.loggedRating)} | rewatches ${film.rewatchCount}`,
+        AI_SAMPLE_LIMIT,
+      ),
+      rewatches: pickUniqueMapped(
+        rewatchLeaders,
+        (film) => film.filmKey,
+        (film) => `${filmLabel(film.name, film.year)} | rewatches ${film.rewatchCount} | current ${film.currentRating === null ? "n/a" : round1(film.currentRating)}`,
+        AI_SAMPLE_LIMIT,
+      ),
+      unratedWatched: pickUniqueMapped(
+        unratedWatchedFilms.sort((left, right) =>
+          sortIsoDesc(left.exactWatchedDate || left.bestWatchedDate, right.exactWatchedDate || right.bestWatchedDate)
+          || right.reviewRows - left.reviewRows
+          || left.name.localeCompare(right.name)),
+        (film) => film.filmKey,
+        (film) => `${filmLabel(film.name, film.year)} | watched ${film.exactWatchedDate || film.bestWatchedDate || "n/a"} | no current rating | reviews ${film.reviewRows}`,
+        AI_SAMPLE_LIMIT,
+      ),
+      watchlistFrontier: pickUniqueMapped(
+        watchlistFrontier,
+        (film) => film.filmKey,
+        (film) => `${filmLabel(film.name, film.year)} | added ${pickEarliestIso(film.watchlistAddedDates) || "n/a"}`,
+        8,
+      ),
+    },
+    listSignals: {
+      activeLists: compactListTitles(summary?.listSummary.lists, "active", 6),
+      archivedLists: compactListTitles(summary?.listSummary.lists, "orphaned", 4),
+    },
+    dataQuality: {
+      parseIssueCount: summary?.parseIssues.length || 0,
+      importSpikeDetected: summary?.importSpikeSummary.importSpikeDetected || false,
+      largestSingleDayImport: summary?.importSpikeSummary.largestSingleDayImportDate
+        ? `${summary.importSpikeSummary.largestSingleDayImportDate}:${summary.importSpikeSummary.largestSingleDayImportCount}`
+        : null,
+      exactDateCoveragePct: summary ? round1(summary.dateQualitySummary.exactDatedWatchedFilmCoverage * 100) : null,
+      currentOnlyRatings: summary?.ratingSourceSummary.currentOnly || 0,
+      loggedOnlyRatings: summary?.ratingSourceSummary.loggedOnly || 0,
+      activeLists: summary?.listSummary.activeListCount || 0,
+      archivedLists: summary?.listSummary.archivedListCount || 0,
+    },
+  };
+
+  let compactProfile = profile;
+  let serialized = JSON.stringify(compactProfile);
+
+  if (serialized.length > AI_PAYLOAD_CHAR_BUDGET) {
+    compactProfile = {
+      ...compactProfile,
+      reviewLanguage: {
+        ...compactProfile.reviewLanguage,
+        topWords: compactProfile.reviewLanguage.topWords.slice(0, 12),
+        sampleSnippets: compactProfile.reviewLanguage.sampleSnippets.slice(0, 4),
+      },
+      behaviorSignals: {
+        ...compactProfile.behaviorSignals,
+        recentWatches: compactProfile.behaviorSignals.recentWatches.slice(0, 8),
+        currentFavorites: compactProfile.behaviorSignals.currentFavorites.slice(0, 8),
+        rewatches: compactProfile.behaviorSignals.rewatches.slice(0, 8),
+        unratedWatched: compactProfile.behaviorSignals.unratedWatched.slice(0, 6),
+        watchlistFrontier: compactProfile.behaviorSignals.watchlistFrontier.slice(0, 6),
+      },
+    };
+    serialized = JSON.stringify(compactProfile);
+  }
 
   return {
-    overview: stats.overview,
-    quickFacts: stats.quickFacts,
-    ratings: stats.ratings,
-    ratingDrift: stats.ratingDrift,
-    backlog: stats.backlog,
-    reviews: stats.reviews,
-    releaseAnalytics: stats.releaseAnalytics,
-    archives: stats.archives,
-    activity: stats.activity,
-    releaseYears: stats.releaseYears,
-    text: stats.text,
-    shareCard: stats.shareCard,
-    summary,
-    films: entries,
+    ...compactProfile,
+    payloadStats: {
+      approxChars: serialized.length,
+      filmsInSource: films.length,
+      watchedFilmsInSource: watchedFilms.length,
+      currentRatedInSource: currentRatedFilms.length,
+      loggedRatedInSource: loggedRatedFilms.length,
+      comparableInSource: comparableFilms.length,
+      reviewFilmsInSource: reviewFilms.length,
+    },
   };
 }
 

@@ -58,16 +58,17 @@ function buildPrompt(body: Body): { system: string; user: string } {
   const language = (body.language || "en").trim();
   const mode = body.mode || "roast";
   const level = body.roastLevel || 2;
-  const strictness = level === 1 ? "mild and playful" : level === 2 ? "sharp and witty" : "aggressive but still respectful";
+  const strictness = level === 1 ? "mild and playful" : level === 2 ? "sharp and witty" : "if roast: aggressive and brutal. No holding back.  if praise: extremely enthusiastic and over-the-top";
 
   const system =
-    `You are writing a direct film-friend style monologue to the user. ` +
+    `You are writing a direct film-friend style monologue to the user from a compact Letterboxd taste profile. ` +
     `Output ONLY in ${language}. Mode=${mode}. Tone=${strictness}. ` +
     `Hard rules: no markdown headings, no numbered template, no system-style wording, no fluff. ` +
-    `Use concrete references to the uploaded film list patterns (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
-    `Structure: (A) 1 short title line, (B) 3 compact paragraphs speaking directly to the user, (C) 8 bullet recommendations with specific movie names and one-line reason.`;
+    `Use concrete references to the profile's patterns and representative titles (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
+    `Treat the payload as already curated: do not ask for raw rows or missing data. ` +
+    `Structure: (A) 1 short title line, (B) some paragraphs speaking directly to the user, (C) 8 bullet recommendations with specific movie names and one-line reason.`;
 
-  const user = `Full Letterboxd dossier JSON:\n${JSON.stringify(body.profile || {}, null, 2)}`;
+  const user = `Compact Letterboxd taste profile JSON:\n${JSON.stringify(body.profile || {})}`;
   return { system, user };
 }
 
