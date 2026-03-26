@@ -14,6 +14,7 @@ export interface Env {
 
 type Provider = "default" | "default_kimi" | "openai_compat" | "gemini";
 type Mode = "praise" | "roast";
+type PromptVariant = "default" | "kimi";
 
 type Body = {
   provider?: Provider;
@@ -31,6 +32,18 @@ function json(data: unknown, init?: ResponseInit) {
     ...init,
     headers: { "content-type": "application/json; charset=utf-8", ...(init?.headers || {}) }
   });
+}
+
+class UpstreamError extends Error {
+  status: number;
+  url: string;
+
+  constructor(message: string, status: number, url: string) {
+    super(message);
+    this.name = "UpstreamError";
+    this.status = status;
+    this.url = url;
+  }
 }
 
 function getIp(req: Request): string {
@@ -62,22 +75,32 @@ async function enforceRateLimit(env: Env, ip: string): Promise<{ ok: boolean; re
   return { ok: true, remaining: Math.max(0, limit - next) };
 }
 
-function buildPrompt(body: Body): { system: string; user: string } {
+function buildPrompt(body: Body, variant: PromptVariant = "default"): { system: string; user: string } {
   const language = normalizeLanguage(body.language);
   const mode = body.mode || "roast";
   const level = body.roastLevel || 2;
-  const strictness = mode === "roast"
-    ? (level === 1 ? "mild and playful. only a bit sarcastic" : level === 2 ? "sharp and witty" : "aggressive and brutal. u can use any words including swear words to make it hurt more")
-    : (level === 1 ? "warm and encouraging" : level === 2 ? "enthusiastic and vivid" : "extremely enthusiastic and over-the-top");
+  const strictness = variant === "kimi"
+    ? mode === "roast"
+      ? (level === 1 ? "lightly teasing and playful" : level === 2 ? "sharp and witty" : "biting and ruthless, but still natural and non-obscene")
+      : (level === 1 ? "warm and encouraging" : level === 2 ? "enthusiastic and vivid" : "extremely enthusiastic and over-the-top")
+    : mode === "roast"
+      ? (level === 1 ? "mild and playful. only a bit sarcastic" : level === 2 ? "sharp and witty" : "aggressive and brutal. u can use any words including swear words to make it hurt more")
+      : (level === 1 ? "warm and encouraging" : level === 2 ? "enthusiastic and vivid" : "extremely enthusiastic and over-the-top");
 
-  const system =
-    `You are writing a direct film-friend style monologue to the user from a compact Letterboxd taste profile. ` +
-    `Output ONLY in ${language}. Mode=${mode}. Tone=${strictness}. ` +
-    `Hard rules: plain text only. No markdown headings, no numbered template, no bullet markers, no asterisks, no bold markers, no system-style wording, no fluff. ` +
-    `Every movie title you mention must stay in English exactly as given in the profile. Never translate or localize film titles. ` +
-    `Use concrete references to the profile's patterns and representative titles (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
-    `Treat the payload as already curated: do not ask for raw rows or missing data. ` +
-    `Structure: (A) 1 short title line, (B) some compact paragraphs speaking directly to the user, (C) 8 separate recommendation lines formatted as "Movie Title - reason" with no bullets or numbering.`;
+  const system = variant === "kimi"
+    ? `You are Kimi, an AI assistant provided by Moonshot AI, generating a Letterboxd taste note from a compact movie profile. ` +
+      `Prefer replying in ${language}. Mode=${mode}. Tone=${strictness}. ` +
+      `Hard rules: plain text only. No markdown, no headings, no bullet markers, no numbered list markers, no asterisks. ` +
+      `Keep every movie title in English exactly as given in the profile. Never translate film titles. ` +
+      `Use the profile directly. Do not ask for more data. ` +
+      `Keep it concise and stable: (A) 1 short title line, (B) 2 to 4 compact paragraphs, (C) 8 recommendation lines in the format "Movie Title - reason".`
+    : `You are writing a direct film-friend style monologue to the user from a compact Letterboxd taste profile. ` +
+      `Output ONLY in ${language}. Mode=${mode}. Tone=${strictness}. ` +
+      `Hard rules: plain text only. No markdown headings, no numbered template, no bullet markers, no asterisks, no bold markers, no system-style wording, no fluff. ` +
+      `Every movie title you mention must stay in English exactly as given in the profile. Never translate or localize film titles. ` +
+      `Use concrete references to the profile's patterns and representative titles (rating contradictions, era preference, rewatches, unrated behavior, review language). ` +
+      `Treat the payload as already curated: do not ask for raw rows or missing data. ` +
+      `Structure: (A) 1 short title line, (B) some compact paragraphs speaking directly to the user, (C) 8 separate recommendation lines formatted as "Movie Title - reason" with no bullets or numbering.`;
 
   const user = `Compact Letterboxd taste profile JSON:\n${JSON.stringify(body.profile || {})}`;
   return { system, user };
@@ -103,7 +126,107 @@ function normalizeBaseUrl(baseUrl: string): string {
   return clean.endsWith("/v1") ? clean.slice(0, -3) : clean;
 }
 
-async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: string; system: string; user: string; temperature?: number; }): Promise<string> {
+function summarizeUpstreamError(raw: string, fallback: string): string {
+  const cleaned = raw.replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return fallback;
+  }
+  return cleaned.slice(0, 240);
+}
+
+function buildKimiFallbackProfile(profile: unknown): unknown {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    return profile;
+  }
+
+  const source = profile as Record<string, unknown>;
+  const summary = typeof source.summary === "object" && source.summary && !Array.isArray(source.summary)
+    ? source.summary
+    : undefined;
+  const ratingPatterns = typeof source.ratingPatterns === "object" && source.ratingPatterns && !Array.isArray(source.ratingPatterns)
+    ? source.ratingPatterns as Record<string, unknown>
+    : undefined;
+  const reviewLanguage = typeof source.reviewLanguage === "object" && source.reviewLanguage && !Array.isArray(source.reviewLanguage)
+    ? source.reviewLanguage as Record<string, unknown>
+    : undefined;
+  const behaviorSignals = typeof source.behaviorSignals === "object" && source.behaviorSignals && !Array.isArray(source.behaviorSignals)
+    ? source.behaviorSignals as Record<string, unknown>
+    : undefined;
+  const listSignals = typeof source.listSignals === "object" && source.listSignals && !Array.isArray(source.listSignals)
+    ? source.listSignals as Record<string, unknown>
+    : undefined;
+
+  return {
+    profileVersion: source.profileVersion,
+    scope: source.scope,
+    summary,
+    ratingPatterns: ratingPatterns
+      ? {
+        currentHistogram: Array.isArray(ratingPatterns.currentHistogram) ? ratingPatterns.currentHistogram.slice(0, 8) : [],
+        loggedHistogram: Array.isArray(ratingPatterns.loggedHistogram) ? ratingPatterns.loggedHistogram.slice(0, 8) : [],
+        drift: typeof ratingPatterns.drift === "object" && ratingPatterns.drift && !Array.isArray(ratingPatterns.drift)
+          ? {
+            ...(ratingPatterns.drift as Record<string, unknown>),
+            biggestUpgrades: Array.isArray((ratingPatterns.drift as Record<string, unknown>).biggestUpgrades)
+              ? ((ratingPatterns.drift as Record<string, unknown>).biggestUpgrades as unknown[]).slice(0, 4)
+              : [],
+            biggestDowngrades: Array.isArray((ratingPatterns.drift as Record<string, unknown>).biggestDowngrades)
+              ? ((ratingPatterns.drift as Record<string, unknown>).biggestDowngrades as unknown[]).slice(0, 4)
+              : [],
+          }
+          : undefined,
+      }
+      : undefined,
+    activitySignals: source.activitySignals,
+    eraSignals: source.eraSignals,
+    reviewLanguage: reviewLanguage
+      ? {
+        reviewRatePct: reviewLanguage.reviewRatePct,
+        averageLength: reviewLanguage.averageLength,
+        medianLength: reviewLanguage.medianLength,
+        topWords: Array.isArray(reviewLanguage.topWords) ? reviewLanguage.topWords.slice(0, 8) : [],
+        sampleSnippets: Array.isArray(reviewLanguage.sampleSnippets) ? reviewLanguage.sampleSnippets.slice(0, 2) : [],
+      }
+      : undefined,
+    behaviorSignals: behaviorSignals
+      ? {
+        recentWatches: Array.isArray(behaviorSignals.recentWatches) ? behaviorSignals.recentWatches.slice(0, 4) : [],
+        currentFavorites: Array.isArray(behaviorSignals.currentFavorites) ? behaviorSignals.currentFavorites.slice(0, 4) : [],
+        ratingContradictions: Array.isArray(behaviorSignals.ratingContradictions) ? behaviorSignals.ratingContradictions.slice(0, 4) : [],
+        rewatches: Array.isArray(behaviorSignals.rewatches) ? behaviorSignals.rewatches.slice(0, 4) : [],
+        unratedWatched: Array.isArray(behaviorSignals.unratedWatched) ? behaviorSignals.unratedWatched.slice(0, 3) : [],
+        watchlistFrontier: Array.isArray(behaviorSignals.watchlistFrontier) ? behaviorSignals.watchlistFrontier.slice(0, 3) : [],
+      }
+      : undefined,
+    listSignals: listSignals
+      ? {
+        activeLists: Array.isArray(listSignals.activeLists) ? listSignals.activeLists.slice(0, 4) : [],
+        archivedLists: Array.isArray(listSignals.archivedLists) ? listSignals.archivedLists.slice(0, 2) : [],
+      }
+      : undefined,
+    dataQuality: source.dataQuality,
+    payloadStats: source.payloadStats,
+  };
+}
+
+function buildMinimalKimiProfile(profile: unknown): unknown {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    return profile;
+  }
+
+  const source = profile as Record<string, unknown>;
+  return {
+    profileVersion: source.profileVersion,
+    scope: source.scope,
+    summary: source.summary,
+    activitySignals: source.activitySignals,
+    eraSignals: source.eraSignals,
+    dataQuality: source.dataQuality,
+    payloadStats: source.payloadStats,
+  };
+}
+
+async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: string; system: string; user: string; temperature?: number; maxTokens?: number; }): Promise<string> {
   const url = normalizeBaseUrl(args.baseUrl) + "/v1/chat/completions";
   const payload: Record<string, unknown> = {
     model: args.model,
@@ -112,13 +235,32 @@ async function callOpenAICompat(args: { apiKey: string; baseUrl: string; model: 
   if (typeof args.temperature === "number") {
     payload.temperature = args.temperature;
   }
+  if (typeof args.maxTokens === "number") {
+    payload.max_tokens = args.maxTokens;
+  }
   const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", "authorization": `Bearer ${args.apiKey}` },
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "authorization": `Bearer ${args.apiKey}`,
+    },
     body: JSON.stringify(payload)
   });
-  const data: any = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `OpenAI compatible error (${res.status})`);
+  const raw = await res.text();
+  let data: any = {};
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = {};
+    }
+  }
+  if (!res.ok) {
+    const jsonMessage = typeof data?.error?.message === "string" ? data.error.message : "";
+    const message = jsonMessage || summarizeUpstreamError(raw, `OpenAI compatible error (${res.status})`);
+    throw new UpstreamError(message, res.status, url);
+  }
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error("No text in model response.");
   return cleanPlainTextOutput(String(text));
@@ -146,7 +288,6 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   const body = (await ctx.request.json().catch(() => null)) as Body | null;
   if (!body) return json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { system, user } = buildPrompt(body);
   const provider = (body.provider || "default") as Provider;
 
   try {
@@ -160,6 +301,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const model = body.model || ctx.env.GEMINI_MODEL || "gemini-1.5-flash";
       usedProvider = "gemini";
       usedModel = model;
+      const { system, user } = buildPrompt(body);
       text = await callGemini({ apiKey, model, system, user });
     } else if (provider === "default_kimi") {
       const apiKey = ctx.env.OPENAI_API_KEY2;
@@ -168,7 +310,39 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const model = ctx.env.OPENAI_MODEL2 || "kimi-k2.5";
       usedProvider = "default_kimi";
       usedModel = model;
-      text = await callOpenAICompat({ apiKey, baseUrl, model, system, user });
+      const primaryBody = {
+        ...body,
+        profile: buildKimiFallbackProfile(body.profile),
+      };
+      const primaryPrompt = buildPrompt(primaryBody, "kimi");
+      try {
+        text = await callOpenAICompat({
+          apiKey,
+          baseUrl,
+          model,
+          system: primaryPrompt.system,
+          user: primaryPrompt.user,
+          maxTokens: 1200,
+        });
+      } catch (error) {
+        if (error instanceof UpstreamError && error.status >= 500) {
+          const fallbackBody = {
+            ...body,
+            profile: buildMinimalKimiProfile(body.profile),
+          };
+          const fallbackPrompt = buildPrompt(fallbackBody, "kimi");
+          text = await callOpenAICompat({
+            apiKey,
+            baseUrl,
+            model,
+            system: fallbackPrompt.system,
+            user: fallbackPrompt.user,
+            maxTokens: 900,
+          });
+        } else {
+          throw error;
+        }
+      }
     } else if (provider === "openai_compat") {
       const apiKey = body.apiKey;
       if (!apiKey) throw new Error("Missing OpenAI-compatible API key.");
@@ -176,13 +350,15 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const model = body.model || "deepseek-chat";
       usedProvider = "openai_compat";
       usedModel = model;
+      const prompt = buildPrompt(body, isKimi25Model(model) ? "kimi" : "default");
       text = await callOpenAICompat({
         apiKey,
         baseUrl,
         model,
-        system,
-        user,
+        system: prompt.system,
+        user: prompt.user,
         temperature: isKimi25Model(model) ? undefined : 0.85,
+        maxTokens: isKimi25Model(model) ? 1200 : undefined,
       });
     } else {
       const apiKey = ctx.env.OPENAI_API_KEY;
@@ -191,7 +367,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const model = body.model || ctx.env.OPENAI_MODEL || "deepseek-chat";
       usedProvider = "default";
       usedModel = model;
-      text = await callOpenAICompat({ apiKey, baseUrl, model, system, user, temperature: 0.85 });
+      const prompt = buildPrompt(body);
+      text = await callOpenAICompat({ apiKey, baseUrl, model, system: prompt.system, user: prompt.user, temperature: 0.85 });
     }
 
     return json({ text, provider: usedProvider, model: usedModel, remaining: rl.remaining }, { status: 200 });
