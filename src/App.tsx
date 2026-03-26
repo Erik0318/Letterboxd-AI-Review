@@ -84,7 +84,7 @@ import {
 } from "./lib/watchActivity";
 
 type Provider = "default" | "default_kimi" | "openai_compat" | "gemini";
-type Lang = "en" | "zh" | "uk";
+type Lang = string;
 type HelpState = "expanded" | "collapsed" | "dismissed";
 type ViewOption = SavedViewPreset | SavedViewRecord;
 type UiCue = "scope" | "saved-view" | "share";
@@ -266,6 +266,88 @@ function slugifyFileName(value: string): string {
 const AI_SAMPLE_LIMIT = 10;
 const AI_REVIEW_SAMPLE_LIMIT = 6;
 const AI_PAYLOAD_CHAR_BUDGET = 24000;
+const AI_LANGUAGE_SUGGESTIONS = [
+  "English",
+  "Chinese",
+  "Chinese (Simplified)",
+  "Chinese (Traditional)",
+  "Cantonese",
+  "Japanese",
+  "Korean",
+  "Spanish",
+  "French",
+  "German",
+  "Italian",
+  "Portuguese",
+  "Brazilian Portuguese",
+  "Russian",
+  "Ukrainian",
+  "Polish",
+  "Czech",
+  "Slovak",
+  "Hungarian",
+  "Romanian",
+  "Bulgarian",
+  "Serbian",
+  "Croatian",
+  "Bosnian",
+  "Slovenian",
+  "Albanian",
+  "Macedonian",
+  "Greek",
+  "Turkish",
+  "Arabic",
+  "Hebrew",
+  "Persian",
+  "Hindi",
+  "Urdu",
+  "Bengali",
+  "Tamil",
+  "Telugu",
+  "Marathi",
+  "Gujarati",
+  "Punjabi",
+  "Malayalam",
+  "Kannada",
+  "Thai",
+  "Vietnamese",
+  "Indonesian",
+  "Malay",
+  "Filipino",
+  "Swahili",
+  "Dutch",
+  "Danish",
+  "Swedish",
+  "Norwegian",
+  "Finnish",
+  "Icelandic",
+  "Estonian",
+  "Latvian",
+  "Lithuanian",
+  "Irish",
+  "Welsh",
+  "Scottish Gaelic",
+  "Catalan",
+  "Basque",
+  "Galician",
+  "Georgian",
+  "Armenian",
+  "Azerbaijani",
+  "Kazakh",
+  "Uzbek",
+  "Mongolian",
+  "Nepali",
+  "Sinhala",
+  "Burmese",
+  "Khmer",
+  "Lao",
+  "Esperanto",
+  "Latin",
+];
+
+function normalizeAiLanguage(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
 
 function trimAiSnippet(value: string | null | undefined, maxLength = 140): string | null {
   const cleaned = String(value || "").replace(/\s+/g, " ").trim();
@@ -586,7 +668,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(() => parseShowDebugFromQuery());
   const [scope, setScope] = useState<AnalysisScope>(() => parseScopeFromQuery());
   const [label, setLabel] = useState("");
-  const [language, setLanguage] = useState<Lang>("en");
+  const [language, setLanguage] = useState<Lang>("English");
   const [mode, setMode] = useState<"praise" | "roast">("roast");
   const [roastLevel, setRoastLevel] = useState<1 | 2 | 3>(2);
   const [provider, setProvider] = useState<Provider>("default");
@@ -1496,6 +1578,7 @@ export default function App() {
     if (!stats || !films) {
       return;
     }
+    const selectedLanguage = normalizeAiLanguage(language) || "English";
     setAiBusy(true);
     setAiText("");
     setAiProgress(8);
@@ -1504,7 +1587,7 @@ export default function App() {
       const dossier = aiDossier(films, stats, datasetSummary);
       const requestBody = {
         provider,
-        language,
+        language: selectedLanguage,
         mode,
         roastLevel,
         profile: dossier,
@@ -1527,14 +1610,27 @@ export default function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(requestBody),
       });
-      const data = (await res.json().catch(() => ({}))) as { text?: unknown; error?: unknown };
-      if (!res.ok) {
-        setAiText(typeof data.error === "string" ? data.error : "AI request failed.");
-      } else {
-        setAiText(typeof data.text === "string" ? data.text : "");
+      const contentType = res.headers.get("content-type") || "";
+      const raw = await res.text();
+      let data: { text?: unknown; error?: unknown } = {};
+      if (contentType.includes("application/json")) {
+        try {
+          data = JSON.parse(raw || "{}") as { text?: unknown; error?: unknown };
+        } catch {
+          data = {};
+        }
       }
-    } catch {
-      setAiText("AI request failed.");
+      if (!res.ok) {
+        setAiText(
+          typeof data.error === "string" && data.error.trim()
+            ? data.error
+            : `AI request failed (${res.status}${res.statusText ? ` ${res.statusText}` : ""}).`,
+        );
+      } else {
+        setAiText(typeof data.text === "string" ? data.text : raw);
+      }
+    } catch (error) {
+      setAiText(error instanceof Error ? error.message : "AI request failed.");
     } finally {
       window.clearInterval(id);
       setAiProgress(100);
@@ -2740,11 +2836,19 @@ export default function App() {
                   </div>
                   <div>
                     <div className="small">AI language</div>
-                    <select value={language} onChange={(event) => setLanguage(event.target.value as Lang)}>
-                      <option value="en">English</option>
-                      <option value="zh">Chinese</option>
-                      <option value="uk">Ukrainian</option>
-                    </select>
+                    <input
+                      list="ai-language-options"
+                      value={language}
+                      onChange={(event) => setLanguage(event.target.value)}
+                      onBlur={(event) => setLanguage(normalizeAiLanguage(event.target.value) || "English")}
+                      placeholder="Any language or dialect"
+                      spellCheck={false}
+                    />
+                    <datalist id="ai-language-options">
+                      {AI_LANGUAGE_SUGGESTIONS.map((item) => (
+                        <option value={item} key={item} />
+                      ))}
+                    </datalist>
                   </div>
                   <div>
                     <div className="small">Provider</div>
@@ -2761,6 +2865,9 @@ export default function App() {
                 </p>
                 <p className="small">
                   AI output is always plain text only. No markdown, no asterisks, and any movie titles should stay in English.
+                </p>
+                <p className="small">
+                  You can type any language or dialect here. The suggestion list is only a shortcut.
                 </p>
 
                 {!usesBuiltInAi && (

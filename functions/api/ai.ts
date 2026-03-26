@@ -37,6 +37,11 @@ function getIp(req: Request): string {
 
 function todayKey(): string { return new Date().toISOString().slice(0, 10); }
 
+function normalizeLanguage(value: string | undefined): string {
+  const cleaned = String(value || "").replace(/\s+/g, " ").trim();
+  return cleaned.slice(0, 80) || "English";
+}
+
 function isBypassIp(env: Env, ip: string): boolean {
   const raw = env.AI_BYPASS_IPS || "";
   const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
@@ -56,7 +61,7 @@ async function enforceRateLimit(env: Env, ip: string): Promise<{ ok: boolean; re
 }
 
 function buildPrompt(body: Body): { system: string; user: string } {
-  const language = (body.language || "en").trim();
+  const language = normalizeLanguage(body.language);
   const mode = body.mode || "roast";
   const level = body.roastLevel || 2;
   const strictness = mode === "roast"
