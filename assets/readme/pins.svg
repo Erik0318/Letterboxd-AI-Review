@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="120" viewBox="0 0 1200 120" role="img" aria-labelledby="title desc">
+  <title id="title">Animated data pins</title>
+  <desc id="desc">A timeline with pulsing pins to decorate the README header.</desc>
+
+  <defs>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#293241" />
+      <stop offset="50%" stop-color="#3d5a80" />
+      <stop offset="100%" stop-color="#98c1d9" />
+    </linearGradient>
+    <linearGradient id="pulse" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ee6c4d" />
+      <stop offset="100%" stop-color="#e63946" />
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="120" fill="#f7f9fb" />
+  <path d="M40 60 H1160" stroke="url(#line)" stroke-width="4" stroke-linecap="round" />
+
+  <g fill="none" stroke="url(#line)" stroke-width="1.5" opacity="0.4">
+    <path d="M120 60 V28" />
+    <path d="M300 60 V20" />
+    <path d="M520 60 V35" />
+    <path d="M760 60 V24" />
+    <path d="M980 60 V30" />
+  </g>
+
+  <g>
+    <g transform="translate(120,60)">
+      <circle r="6" fill="url(#pulse)" />
+      <circle r="12" stroke="#ee6c4d" opacity="0.55">
+        <animate attributeName="r" values="10;22;10" dur="2.6s" begin="0s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="2.6s" begin="0s" repeatCount="indefinite" />
+      </circle>
+    </g>
+
+    <g transform="translate(300,60)">
+      <circle r="6" fill="url(#pulse)" />
+      <circle r="12" stroke="#ee6c4d" opacity="0.55">
+        <animate attributeName="r" values="10;22;10" dur="2.6s" begin="0.35s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="2.6s" begin="0.35s" repeatCount="indefinite" />
+      </circle>
+    </g>
+
+    <g transform="translate(520,60)">
+      <circle r="6" fill="url(#pulse)" />
+      <circle r="12" stroke="#ee6c4d" opacity="0.55">
+        <animate attributeName="r" values="10;22;10" dur="2.6s" begin="0.7s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="2.6s" begin="0.7s" repeatCount="indefinite" />
+      </circle>
+    </g>
+
+    <g transform="translate(760,60)">
+      <circle r="6" fill="url(#pulse)" />
+      <circle r="12" stroke="#ee6c4d" opacity="0.55">
+        <animate attributeName="r" values="10;22;10" dur="2.6s" begin="1.05s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="2.6s" begin="1.05s" repeatCount="indefinite" />
+      </circle>
+    </g>
+
+    <g transform="translate(980,60)">
+      <circle r="6" fill="url(#pulse)" />
+      <circle r="12" stroke="#ee6c4d" opacity="0.55">
+        <animate attributeName="r" values="10;22;10" dur="2.6s" begin="1.4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="2.6s" begin="1.4s" repeatCount="indefinite" />
+      </circle>
+    </g>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <circle cx="120" cy="28" r="3" fill="#3d5a80" />
+    <circle cx="300" cy="20" r="3" fill="#3d5a80" />
+    <circle cx="520" cy="35" r="3" fill="#3d5a80" />
+    <circle cx="760" cy="24" r="3" fill="#3d5a80" />
+    <circle cx="980" cy="30" r="3" fill="#3d5a80" />
+  </g>
+</svg>
