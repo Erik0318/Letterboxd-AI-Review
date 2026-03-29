@@ -7,11 +7,11 @@
 	<img src="https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
 	<img src="https://img.shields.io/badge/Vite-5.4-FF6B00?logo=vite&logoColor=white" alt="Vite" />
 	<img src="https://img.shields.io/badge/Runtime-Cloudflare%20Pages-F38020?logo=cloudflare&logoColor=white" alt="Cloudflare Pages" />
-	<img src="https://img.shields.io/badge/AI-DeepSeek%20%7C%20Kimi%20%7C%20Gemini-111111" alt="AI providers" />
+	<img src="https://img.shields.io/badge/AI-DeepSeek%20%7C%20Kimi%20%7C%20More-111111" alt="AI providers" />
 </p>
 
 <p align="center">
-	<img src="assets/readme/stanleykubrickGIF.gif" alt="Animated data pins" width="800" />
+	<img src="assets/readme/stanleykubrickGIF.gif" alt="Animated data pins" width="100" />
 </p>
 
 # Letterboxd AI Review
