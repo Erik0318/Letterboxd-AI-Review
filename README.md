@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-	<img src="assets/readme/stanleykubrickGIF.gif" alt="Animated data pins" width="100" />
+	<img src="assets/readme/stanleykubrickGIF.gif" alt="Animated data pins" width="500" />
 </p>
 
 # Letterboxd AI Review
